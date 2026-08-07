@@ -1,0 +1,17 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+onlyBuiltDependencies:
+  - "@prisma/engines"
+  - "prisma"
+  - "esbuild"
+
+minimumReleaseAgeExclude:
+  - "tsx@4.23.11"
+  - "ws@8.21.3"
+
+allowBuilds:
+  '@prisma/engines': true
+  esbuild: true
+  prisma: true

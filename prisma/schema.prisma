@@ -1,0 +1,117 @@
+// Prisma schema — Music Connect (PRD §29, §41 D-03/D-05)
+// Persistent store for user data only. Ephemeral state (queue, presence,
+// playback state) lives in Redis.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../apps/server/src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  role         String   @default("user")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  devices          Device[]
+  playlists        Playlist[]
+  favorites        Favorite[]
+  playbackHistory  PlaybackHistory[]
+  providerAccounts ProviderAccount[]
+  settings         UserSetting?
+}
+
+model Device {
+  id        String    @id
+  name      String
+  type      String    @default("unknown")
+  tokenHash String    @unique
+  lastSeen  DateTime?
+  online    Boolean   @default(false)
+  volume    Int       @default(70)
+  userId    String?
+  user      User?     @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Playlist {
+  id        String   @id @default(cuid())
+  name      String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  tracks    PlaylistTrack[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PlaylistTrack {
+  id         String   @id @default(cuid())
+  playlistId String
+  playlist   Playlist @relation(fields: [playlistId], references: [id])
+  trackId    String // stable provider id (never a temp URL — PRD §15)
+  provider   String   @default("youtube-music")
+  title      String
+  artist     String
+  album      String?
+  duration   Int
+  thumbnail  String?
+  position   Int
+  addedAt    DateTime @default(now())
+
+  @@unique([playlistId, trackId])
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  trackId   String
+  provider  String   @default("youtube-music")
+  title     String
+  artist    String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, trackId])
+}
+
+model PlaybackHistory {
+  id       String   @id @default(cuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id])
+  deviceId String?
+  trackId  String
+  provider String   @default("youtube-music")
+  title    String
+  artist   String
+  playedAt DateTime @default(now())
+}
+
+model ProviderAccount {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  provider   String
+  externalId String?
+  cookies    String? // encrypted at rest
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, provider])
+}
+
+model UserSetting {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
+  key    String
+  value  String
+}

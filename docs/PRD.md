@@ -1815,3 +1815,13 @@ target device uses its own stored volume (Spotify-like).
 - `/healthz` health endpoint; report to Tianji.
 - Vitest: unit tests for the Queue Manager (auto-next, shuffle, repeat,
   handoff) + one WebSocket integration test.
+
+## D-13 — Auto-queue recommendations (extends §24, §25)
+
+When the queue runs low (`remaining <= AUTO_QUEUE_THRESHOLD`, default 2) the
+server fetches YT Music "Up Next" recommendations seeded from the current
+track and appends them as `addedBy: "auto"` (deduped against the queue).
+Auto-next (§25) advances the server-managed queue; if the queue is exhausted
+it refills from recommendations first, so playback never stops. Config:
+`AUTO_QUEUE_THRESHOLD` (default 2), `AUTO_QUEUE_BATCH` (default 10).
+Recommendations are cached in Redis (10 min, D-09).

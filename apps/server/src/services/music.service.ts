@@ -48,6 +48,11 @@ export class MusicService {
     return this.cachedMetadata<Playlist>(`playlist:${id}`, async () => (await this.provider("youtube-music")?.getPlaylist(id)) ?? null);
   }
 
+  /** Recommended tracks seeded from a track (auto-queue). No cache here — AutoQueueService caches. */
+  async getUpNext(trackId: string, limit?: number): Promise<Track[]> {
+    return (await this.provider("youtube-music")?.getUpNext(trackId, limit)) ?? [];
+  }
+
   private async cachedMetadata<T>(suffix: string, fetch: () => Promise<T | null>): Promise<T | null> {
     const cacheKey = RedisKeys.cacheMetadata("youtube-music", suffix);
     const cached = await redis.get(cacheKey);

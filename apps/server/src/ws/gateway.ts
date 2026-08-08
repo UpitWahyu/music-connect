@@ -89,8 +89,14 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
       if (msg.type === "player.state" && msg.report && typeof msg.report === "object") {
         const report = msg.report as unknown as PlayerStateReport;
         void playbackService.applyPlayerReport(deviceId, report);
+        return;
       }
-      // TODO Phase 6: player.trackEnded → queue auto-next (§25)
+
+      if (msg.type === "player.trackEnded") {
+        // PRD §25: track finished → server decides (auto-next + auto-queue)
+        void playbackService.onTrackEnded(deviceId);
+        return;
+      }
     });
 
     s.on("close", () => {

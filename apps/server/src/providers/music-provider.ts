@@ -12,4 +12,6 @@ export interface MusicProvider {
   getAlbum(id: string): Promise<Album | null>;
   getArtist(id: string): Promise<Artist | null>;
   getPlaylist(id: string): Promise<Playlist | null>;
+  /** Recommended tracks seeded from a track (auto-queue feature). */
+  getUpNext(trackId: string, limit?: number): Promise<Track[]>;
 }

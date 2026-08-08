@@ -9,6 +9,11 @@ function fail(reply: { code: (n: number) => unknown }, e: unknown) {
 
 /** Playback control API (PRD §28, §23). */
 export async function playbackRoutes(app: FastifyInstance): Promise<void> {
+  app.get("/api/devices/:id/state", async (req) => {
+    const { id } = req.params as { id: string };
+    return { state: await playbackService.getState(id) };
+  });
+
   app.post("/api/devices/:id/play", async (req, reply) => {
     const { id } = req.params as { id: string };
     const body = (req.body ?? {}) as { trackId?: string };

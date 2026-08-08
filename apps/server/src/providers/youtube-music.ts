@@ -195,4 +195,39 @@ export class YoutubeMusicProvider implements MusicProvider {
       return null;
     }
   }
+
+  /**
+   * Recommended tracks (auto-queue): YT Music's "Up Next" radio, seeded from
+   * the currently playing track. The first panel item (selected: true) is the
+   * seed itself and is skipped.
+   */
+  async getUpNext(trackId: string, limit = 20): Promise<Track[]> {
+    const yt = await this.client();
+    try {
+      const panel = await yt.music.getUpNext(trackId, true);
+      const tracks: Track[] = [];
+      for (const item of panel.contents ?? []) {
+        if (item.type !== "PlaylistPanelVideo") continue;
+        const plain = JSON.parse(JSON.stringify(item)) as {
+          selected?: boolean;
+          video_id?: string;
+          title?: string;
+          artists?: { name?: string }[];
+          duration?: { seconds?: number };
+        };
+        if (plain.selected || !plain.video_id || !plain.title) continue;
+        tracks.push({
+          id: plain.video_id,
+          provider: this.id,
+          title: textOf(plain.title),
+          artist: plain.artists?.[0]?.name ?? "Unknown",
+          duration: plain.duration?.seconds ?? 0,
+        });
+        if (tracks.length >= limit) break;
+      }
+      return tracks;
+    } catch {
+      return []; // recommendations are best-effort — never fail playback
+    }
+  }
 }

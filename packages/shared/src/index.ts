@@ -11,12 +11,14 @@ import type { PlaybackState } from "@music-connect/types";
 export const RedisKeys = {
   deviceState: (deviceId: string): string => `music:device:${deviceId}:state`,
   deviceQueue: (deviceId: string): string => `music:device:${deviceId}:queue`,
+  deviceQueueIndex: (deviceId: string): string => `music:device:${deviceId}:queue-index`,
   deviceMeta: (deviceId: string): string => `music:device:${deviceId}:meta`,
   devicesOnline: (): string => "music:devices:online",
   pairingCode: (code: string): string => `music:pairing:${code}`,
   pairingDevice: (deviceId: string): string => `music:pairing:device:${deviceId}`,
   cacheSearch: (query: string): string => `music:cache:search:${query.toLowerCase()}`,
   cacheMetadata: (provider: string, id: string): string => `music:cache:meta:${provider}:${id}`,
+  cacheRecommendations: (trackId: string): string => `music:cache:upnext:${trackId}`,
 } as const;
 
 /**

@@ -1,24 +1,25 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted } from "vue";
+import { store, refreshDevices, selectDevice } from "../composables/useMusic";
 
-const model = defineModel<string | null>();
-const devices = ref<string[]>(["living-room", "bedroom", "desktop"]);
-const online = ref<Record<string, boolean>>({ "living-room": true });
+onMounted(() => {
+  void refreshDevices();
+});
 
-// TODO Phase 4: fetch GET /api/devices + live online/offline via WS events
+function onChange(): void {
+  if (store.selectedDevice) void selectDevice(store.selectedDevice);
+}
 </script>
 
 <template>
-  <label class="flex items-center gap-2 text-sm">
-    <span class="text-gray-400">Playing on</span>
-    <select
-      v-model="model"
-      class="rounded-lg border border-gray-700 bg-gray-800 px-2 py-1 text-sm"
-    >
-      <option :value="null" disabled>Select a device</option>
-      <option v-for="d in devices" :key="d" :value="d">
-        {{ d }} {{ online[d] ? "🟢" : "⚪" }}
-      </option>
-    </select>
-  </label>
+  <select
+    :value="store.selectedDevice ?? undefined"
+    class="rounded-lg border border-gray-700 bg-gray-800 px-2 py-1 text-sm"
+    @change="onChange"
+  >
+    <option :value="undefined" disabled>Select a device</option>
+    <option v-for="d in store.devices" :key="d.id" :value="d.id">
+      {{ d.name || d.id }} {{ d.online ? "🟢" : "⚪" }}
+    </option>
+  </select>
 </template>

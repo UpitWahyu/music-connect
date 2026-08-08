@@ -1,5 +1,5 @@
 import type { MediaRef, PlayerStateReport } from "@music-connect/protocol";
-import type { PlaybackState, QueueItem } from "@music-connect/types";
+import type { PlaybackState, QueueItem, Track } from "@music-connect/types";
 import { RedisKeys } from "@music-connect/shared";
 import { redis } from "../redis/client.js";
 import { sendToPlayer } from "../ws/registry.js";
@@ -111,6 +111,26 @@ export class PlaybackService {
   /** Player → server: track finished (PRD §25). */
   async onTrackEnded(deviceId: string): Promise<void> {
     await this.next(deviceId);
+  }
+
+  /**
+   * Play a YT Music playlist: replaces the queue with the playlist tracks
+   * and starts the first one (Spotify semantics). Returns the queued count.
+   */
+  async playPlaylist(deviceId: string, playlistId: string): Promise<{ queued: number; first: Track | null }> {
+    const playlist = await musicService.getPlaylist(playlistId);
+    if (!playlist || playlist.tracks.length === 0) throw new Error("PLAYLIST_NOT_FOUND");
+
+    await queueService.clear(deviceId);
+    for (const track of playlist.tracks) await queueService.add(deviceId, track);
+    await queueService.setIndex(deviceId, 0);
+
+    const first = await queueService.getCurrent(deviceId);
+    if (first) {
+      await this.loadTrack(deviceId, first);
+      await autoQueueService.ensure(deviceId, first.track.id);
+    }
+    return { queued: playlist.tracks.length, first: first?.track ?? null };
   }
 
   /**

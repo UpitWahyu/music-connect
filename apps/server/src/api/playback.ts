@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { extractPlaylistId } from "../utils.js";
 import { playbackService } from "../services/playback.service.js";
 
 function fail(reply: { code: (n: number) => unknown }, e: unknown) {
@@ -87,6 +88,20 @@ export async function playbackRoutes(app: FastifyInstance): Promise<void> {
     try {
       await playbackService.setVolume(id, body.volume);
       return { ok: true };
+    } catch (e) {
+      return fail(reply, e);
+    }
+  });
+
+  /** Play a YT Music playlist (id or URL) — replaces the queue, starts playing. */
+  app.post("/api/devices/:id/playlist", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = (req.body ?? {}) as { playlistId?: string };
+    const playlistId = body.playlistId ? extractPlaylistId(body.playlistId) : null;
+    if (!playlistId) return reply.code(400).send({ error: "INVALID_PLAYLIST_ID" });
+    try {
+      const result = await playbackService.playPlaylist(id, playlistId);
+      return result;
     } catch (e) {
       return fail(reply, e);
     }

@@ -19,7 +19,8 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   app.get("/api/devices", async () => {
     const devices = await prisma.device.findMany();
     const online = new Set(await redis.smembers(RedisKeys.devicesOnline()));
-    return devices.map((d) => ({ ...d, online: online.has(d.id) }));
+    // never expose tokenHash to controllers
+    return devices.map(({ tokenHash: _omit, ...d }) => ({ ...d, online: online.has(d.id) }));
   });
 
   /** Controller flow: generate a pairing code for a new player device. */

@@ -1,24 +1,33 @@
 <script setup lang="ts">
 import { ref } from "vue";
-
-defineProps<{ deviceId: string }>();
-
-interface SearchResult {
-  id: string;
-  title: string;
-  artist: string;
-}
+import { api, type TrackDTO } from "../lib/api";
+import { store, refreshQueue, refreshState } from "../composables/useMusic";
+import { formatDuration } from "../lib/format";
 
 const query = ref("");
-const results = ref<SearchResult[]>([]);
+const results = ref<TrackDTO[]>([]);
+const busy = ref(false);
 
-function doSearch(): void {
-  // TODO Phase 5: GET /api/music/search?q=... (youtubei.js provider, D-09 cache)
-  results.value = [{ id: "xxx", title: "Blinding Lights", artist: "The Weeknd" }];
+async function doSearch(): Promise<void> {
+  if (!query.value.trim()) return;
+  busy.value = true;
+  try {
+    results.value = (await api.search(query.value)).tracks;
+  } finally {
+    busy.value = false;
+  }
 }
 
-function addToQueue(): void {
-  // TODO Phase 6: POST /api/devices/:id/queue
+async function playNow(track: TrackDTO): Promise<void> {
+  if (!store.selectedDevice) return;
+  await api.play(store.selectedDevice, track.id);
+  await refreshState();
+}
+
+async function addToQueue(track: TrackDTO): Promise<void> {
+  if (!store.selectedDevice) return;
+  await api.addToQueue(store.selectedDevice, track);
+  await refreshQueue();
 }
 </script>
 
@@ -31,24 +40,46 @@ function addToQueue(): void {
         placeholder="🔎 Search YouTube Music"
         class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm outline-none focus:border-green-500"
       />
+      <button
+        type="submit"
+        :disabled="busy"
+        class="rounded-lg bg-gray-700 px-3 text-sm hover:bg-gray-600 disabled:opacity-50"
+      >
+        {{ busy ? "..." : "Cari" }}
+      </button>
     </form>
 
-    <ul v-if="results.length" class="mt-2 divide-y divide-gray-800 rounded-lg border border-gray-800 bg-gray-900">
+    <ul
+      v-if="results.length"
+      class="mt-2 divide-y divide-gray-800 rounded-lg border border-gray-800 bg-gray-900"
+    >
       <li
-        v-for="r in results"
-        :key="r.id"
-        class="flex items-center justify-between px-3 py-2 text-sm"
+        v-for="t in results"
+        :key="t.id"
+        class="flex items-center justify-between gap-2 px-3 py-2 text-sm"
       >
-        <div>
-          <div class="font-medium">{{ r.title }}</div>
-          <div class="text-xs text-gray-400">{{ r.artist }}</div>
+        <div class="min-w-0">
+          <div class="truncate font-medium">{{ t.title }}</div>
+          <div class="truncate text-xs text-gray-400">
+            {{ t.artist }} · {{ formatDuration(t.duration) }}
+          </div>
         </div>
-        <button
-          class="rounded bg-gray-700 px-2 py-1 text-xs hover:bg-gray-600"
-          @click="addToQueue"
-        >
-          +
-        </button>
+        <div class="flex shrink-0 gap-1">
+          <button
+            class="rounded bg-green-600/80 px-2 py-1 text-xs hover:bg-green-500"
+            title="Putar sekarang"
+            @click="playNow(t)"
+          >
+            ▶
+          </button>
+          <button
+            class="rounded bg-gray-700 px-2 py-1 text-xs hover:bg-gray-600"
+            title="Tambahkan ke queue"
+            @click="addToQueue(t)"
+          >
+            +
+          </button>
+        </div>
       </li>
     </ul>
   </section>

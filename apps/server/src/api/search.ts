@@ -15,4 +15,19 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
     const track = await musicService.getTrack(id);
     return { track };
   });
+
+  app.get("/api/music/albums/:id", async (req) => {
+    const { id } = req.params as { id: string };
+    return { album: await musicService.getAlbum(id) };
+  });
+
+  app.get("/api/music/artists/:id", async (req) => {
+    const { id } = req.params as { id: string };
+    return { artist: await musicService.getArtist(id) };
+  });
+
+  app.get("/api/music/playlists/:id", async (req) => {
+    const { id } = req.params as { id: string };
+    return { playlist: await musicService.getPlaylist(id) };
+  });
 }

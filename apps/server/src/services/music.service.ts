@@ -1,4 +1,4 @@
-import type { Track } from "@music-connect/types";
+import type { Track, Album, Artist, Playlist } from "@music-connect/types";
 import { RedisKeys } from "@music-connect/shared";
 import { redis } from "../redis/client.js";
 import type { MusicProvider } from "../providers/music-provider.js";
@@ -34,6 +34,27 @@ export class MusicService {
     const track = (await this.provider("youtube-music")?.getTrack(id)) ?? null;
     if (track) await redis.set(cacheKey, JSON.stringify(track), "EX", METADATA_TTL_SECONDS);
     return track;
+  }
+
+  async getAlbum(id: string): Promise<Album | null> {
+    return this.cachedMetadata<Album>(`album:${id}`, async () => (await this.provider("youtube-music")?.getAlbum(id)) ?? null);
+  }
+
+  async getArtist(id: string): Promise<Artist | null> {
+    return this.cachedMetadata<Artist>(`artist:${id}`, async () => (await this.provider("youtube-music")?.getArtist(id)) ?? null);
+  }
+
+  async getPlaylist(id: string): Promise<Playlist | null> {
+    return this.cachedMetadata<Playlist>(`playlist:${id}`, async () => (await this.provider("youtube-music")?.getPlaylist(id)) ?? null);
+  }
+
+  private async cachedMetadata<T>(suffix: string, fetch: () => Promise<T | null>): Promise<T | null> {
+    const cacheKey = RedisKeys.cacheMetadata("youtube-music", suffix);
+    const cached = await redis.get(cacheKey);
+    if (cached) return JSON.parse(cached) as T;
+    const value = await fetch();
+    if (value) await redis.set(cacheKey, JSON.stringify(value), "EX", METADATA_TTL_SECONDS);
+    return value;
   }
 }
 

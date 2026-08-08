@@ -1,40 +1,198 @@
+import { Innertube } from "youtubei.js";
 import type { Track, Album, Artist, Playlist } from "@music-connect/types";
 import type { MusicProvider } from "./music-provider.js";
 
 /**
- * YouTube Music provider — Phase 5.
+ * YouTube Music provider (PRD §13-§14, Phase 5).
  *
- * Search/metadata only, isolated behind MusicProvider so it can be replaced
- * or updated independently (PRD §14). Playback resolution happens on the
- * player via mpv + yt-dlp (PRD §41 D-01), so this class never resolves
- * stream URLs.
- *
- * TODO (Phase 5):
- *  - instantiate youtubei.js (anonymous or with cookies from ProviderAccount)
- *  - implement search() with result normalization (PRD §14 DTO)
- *  - implement getTrack/getAlbum/getArtist/getPlaylist
- *  - respect D-09: metadata cached in Redis (see MusicService)
+ * Search/metadata only — playback resolution happens on the player via
+ * mpv + yt-dlp (PRD §41 D-01), so this class never resolves stream URLs.
+ * Raw youtubei.js nodes are normalized into internal DTOs (PRD §14) and
+ * never reach the frontend.
  */
+
+/** Normalized shape of a MusicResponsiveListItem (via toJSON). */
+interface MusicListItemShape {
+  id?: string;
+  title?: string;
+  artists?: { name: string }[];
+  album?: { name?: string };
+  thumbnail?: { contents?: { url?: string }[] };
+  flex_columns?: { title?: { runs?: { text?: string }[] } }[];
+}
+
+const MAX_RESULTS = 20; // keep search responses snappy (D-09 cache handles the rest)
+
+function firstThumbUrl(items?: { url?: string }[]): string | undefined {
+  return items?.[0]?.url;
+}
+
+/** youtubei.js Text nodes serialize to { text, runs } — always reduce to a string. */
+function textOf(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && "text" in value) {
+    return String((value as { text: unknown }).text ?? "");
+  }
+  return String(value ?? "");
+}
+
+/**
+ * duration isn't exposed on search items — best-effort parse from the
+ * subtitle column ("Artist • Album • 3.22", YT Music uses a dot). Falls back
+ * to 0; the player reports the authoritative duration once playback starts.
+ */
+function parseDurationSeconds(item: MusicListItemShape): number {
+  for (const col of item.flex_columns ?? []) {
+    const text = (col.title?.runs ?? []).map((r) => r.text ?? "").join("");
+    const hms = text.match(/(?:^|\D)(\d{1,2}):(\d{2}):(\d{2})(?:\D|$)/);
+    if (hms) return Number(hms[1]) * 3600 + Number(hms[2]) * 60 + Number(hms[3]);
+    const ms = text.match(/(?:^|\D)(\d{1,2})[:.](\d{2})(?:\D|$)/);
+    if (ms) return Number(ms[1]) * 60 + Number(ms[2]);
+  }
+  return 0;
+}
+
+function normalizeItem(item: unknown): Track | null {
+  const plain = JSON.parse(JSON.stringify(item)) as MusicListItemShape;
+  if (!plain.id || !plain.title) return null;
+  return {
+    id: plain.id,
+    provider: "youtube-music",
+    title: plain.title,
+    artist: plain.artists?.[0]?.name ?? "Unknown",
+    album: plain.album?.name,
+    duration: parseDurationSeconds(plain),
+    thumbnail: firstThumbUrl(plain.thumbnail?.contents),
+  };
+}
+
 export class YoutubeMusicProvider implements MusicProvider {
   readonly id = "youtube-music";
 
-  async search(_query: string): Promise<Track[]> {
-    return []; // TODO Phase 5
+  private yt: Innertube | null = null;
+
+  private async client(): Promise<Innertube> {
+    if (!this.yt) {
+      this.yt = await Innertube.create({ lang: "id", retrieve_player: false });
+      // TODO Phase 8: if a ProviderAccount with cookies exists, re-create the
+      // session with them (PRD §29) — needed for age-restricted content.
+    }
+    return this.yt;
   }
 
-  async getTrack(_id: string): Promise<Track | null> {
-    return null; // TODO Phase 5
+  async search(query: string): Promise<Track[]> {
+    const yt = await this.client();
+    const results = await yt.music.search(query, { type: "song" });
+    const tracks: Track[] = [];
+    for (const section of results.contents ?? []) {
+      const shelf = section as { type?: string; contents?: unknown[] };
+      if (shelf.type !== "MusicShelf") continue;
+      for (const item of shelf.contents ?? []) {
+        const node = item as { type?: string };
+        if (node.type !== "MusicResponsiveListItem") continue;
+        const track = normalizeItem(item);
+        if (track) tracks.push(track);
+        if (tracks.length >= MAX_RESULTS) break;
+      }
+      if (tracks.length >= MAX_RESULTS) break;
+    }
+    return tracks;
   }
 
-  async getAlbum(_id: string): Promise<Album | null> {
-    return null; // TODO Phase 5
+  async getTrack(id: string): Promise<Track | null> {
+    // Primary path: full metadata via the session. On datacenter IPs YouTube
+    // often answers LOGIN_REQUIRED for the player endpoint → falls back to
+    // the public oEmbed API below. TODO Phase 8: re-create the session with
+    // cookies from ProviderAccount (PRD §29) to unlock full metadata.
+    const yt = await this.client();
+    try {
+      const info = await yt.music.getInfo(id);
+      const b = info.basic_info;
+      if (b.title && b.id) {
+        return {
+          id: b.id,
+          provider: this.id,
+          title: b.title,
+          artist: b.author ?? b.channel?.name ?? "Unknown",
+          duration: b.duration ?? 0,
+          thumbnail: firstThumbUrl(b.thumbnail),
+        };
+      }
+    } catch {
+      /* fall through to oEmbed */
+    }
+    return this.getTrackFromOEmbed(id);
   }
 
-  async getArtist(_id: string): Promise<Artist | null> {
-    return null; // TODO Phase 5
+  /** Public oEmbed fallback — no auth, no duration (player reports it). */
+  private async getTrackFromOEmbed(id: string): Promise<Track | null> {
+    try {
+      const res = await fetch(
+        `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${encodeURIComponent(id)}&format=json`,
+      );
+      if (!res.ok) return null;
+      const data = (await res.json()) as {
+        title?: string;
+        author_name?: string;
+        thumbnail_url?: string;
+      };
+      return {
+        id,
+        provider: this.id,
+        title: data.title ?? id,
+        artist: data.author_name ?? "Unknown",
+        duration: 0, // unknown via oEmbed — the player reports it at playback
+        thumbnail: data.thumbnail_url,
+      };
+    } catch {
+      return null; // PRD §31: caller decides (retry / skip / next)
+    }
   }
 
-  async getPlaylist(_id: string): Promise<Playlist | null> {
-    return null; // TODO Phase 5
+  async getAlbum(id: string): Promise<Album | null> {
+    const yt = await this.client();
+    try {
+      const album = await yt.music.getAlbum(id);
+      const header = JSON.parse(JSON.stringify(album.header)) as
+        | { title?: string; artist?: { name?: string } }
+        | undefined;
+      const tracks = album.contents
+        .map(normalizeItem)
+        .filter((t): t is Track => t !== null);
+      return {
+        id,
+        provider: this.id,
+        title: textOf(header?.title) || id,
+        artist: textOf(header?.artist?.name) || "Unknown",
+        tracks,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async getArtist(id: string): Promise<Artist | null> {
+    const yt = await this.client();
+    try {
+      const artist = await yt.music.getArtist(id);
+      const header = JSON.parse(JSON.stringify(artist.header)) as { title?: string } | undefined;
+      return { id, provider: this.id, name: textOf(header?.title) || id };
+    } catch {
+      return null;
+    }
+  }
+
+  async getPlaylist(id: string): Promise<Playlist | null> {
+    const yt = await this.client();
+    try {
+      const playlist = await yt.music.getPlaylist(id);
+      const plain = JSON.parse(JSON.stringify(playlist)) as { title?: string };
+      const tracks = playlist.items
+        .map(normalizeItem)
+        .filter((t): t is Track => t !== null);
+      return { id, provider: this.id, title: textOf(plain.title) || id, tracks };
+    } catch {
+      return null;
+    }
   }
 }

@@ -123,7 +123,6 @@ async function togglePlaylist(playlistId: string): Promise<void> {
   await refreshPlaylists();
   showToast(wasIn ? `Dihapus dari ${plName}` : `Ditambahkan ke ${plName}`);
 }
-}
 
 async function saveMac(): Promise<void> {
   if (!store.selectedDevice || !macInput.value.trim()) return;

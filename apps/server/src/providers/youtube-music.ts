@@ -19,6 +19,8 @@ interface MusicListItemShape {
   album?: { name?: string };
   thumbnail?: { contents?: { url?: string }[] };
   flex_columns?: { title?: { runs?: { text?: string }[] } }[];
+  fixed_columns?: { title?: { text?: string } }[]; // playlist radio items: "6.56"
+  duration?: { seconds?: number }; // PlaylistPanelVideo items
 }
 
 const MAX_RESULTS = 20; // keep search responses snappy (D-09 cache handles the rest)
@@ -35,19 +37,24 @@ function textOf(value: unknown): string {
   }
   return String(value ?? "");
 }
-
 /**
- * duration isn't exposed on search items — best-effort parse from the
- * subtitle column ("Artist • Album • 3.22", YT Music uses a dot). Falls back
- * to 0; the player reports the authoritative duration once playback starts.
+ * duration isn't always exposed — parse from (in order): explicit seconds
+ * (PlaylistPanelVideo), the subtitle column ("Artist • Album • 3.51" search
+ * items, YT Music uses a dot), or the fixed column ("6.56" playlist items).
  */
 function parseDurationSeconds(item: MusicListItemShape): number {
+  if (item.duration?.seconds && item.duration.seconds > 0) return item.duration.seconds;
   for (const col of item.flex_columns ?? []) {
     const text = (col.title?.runs ?? []).map((r) => r.text ?? "").join("");
     const hms = text.match(/(?:^|\D)(\d{1,2}):(\d{2}):(\d{2})(?:\D|$)/);
     if (hms) return Number(hms[1]) * 3600 + Number(hms[2]) * 60 + Number(hms[3]);
     const ms = text.match(/(?:^|\D)(\d{1,2})[:.](\d{2})(?:\D|$)/);
     if (ms) return Number(ms[1]) * 60 + Number(ms[2]);
+  }
+  const fixed = item.fixed_columns?.[0]?.title?.text;
+  if (fixed) {
+    const m = fixed.match(/(\d{1,2})[:.](\d{2})/); // YT Music uses a dot: "6.56"
+    if (m) return Number(m[1]) * 60 + Number(m[2]);
   }
   return 0;
 }
@@ -59,11 +66,24 @@ function normalizeItem(item: unknown): Track | null {
     id: plain.id,
     provider: "youtube-music",
     title: plain.title,
-    artist: plain.artists?.[0]?.name ?? "Unknown",
+    artist: artistOf(plain),
     album: plain.album?.name,
     duration: parseDurationSeconds(plain),
     thumbnail: firstThumbUrl(plain.thumbnail?.contents),
   };
+}
+
+/**
+ * Artist name, preferring the dedicated field; falls back to the subtitle
+ * column ("The Weeknd • Starboy • 3.51" → "The Weeknd"). Some items (e.g.
+ * covers) lack the artists field entirely.
+ */
+function artistOf(item: MusicListItemShape): string {
+  const direct = item.artists?.[0]?.name;
+  if (direct) return direct;
+  const subtitle = (item.flex_columns?.[1]?.title?.runs ?? []).map((r) => r.text ?? "").join("");
+  const first = subtitle.split("•")[0]?.trim();
+  return first && first.length > 0 && first.length < 80 ? first : "Unknown";
 }
 
 export class YoutubeMusicProvider implements MusicProvider {

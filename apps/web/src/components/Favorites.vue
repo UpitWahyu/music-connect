@@ -9,9 +9,16 @@ async function load(): Promise<void> {
   favorites.value = (await api.favorites()).favorites;
 }
 
-async function playTrack(trackId: string): Promise<void> {
+async function playTrack(trackId: string, title: string, artist: string): Promise<void> {
   if (!store.selectedDevice) return;
-  await api.play(store.selectedDevice, trackId);
+  // send stored metadata — avoids the oEmbed fallback (artist "Unknown")
+  await api.play(store.selectedDevice, trackId, {
+    id: trackId,
+    provider: "youtube-music",
+    title,
+    artist,
+    duration: 0,
+  });
   await refreshState();
 }
 
@@ -32,7 +39,7 @@ onMounted(load);
           <div class="truncate font-medium">{{ f.title }}</div>
           <div class="truncate text-xs text-gray-500">{{ f.artist }}</div>
         </div>
-        <button class="rounded bg-green-600/80 px-2 py-1 text-xs hover:bg-green-500" @click="playTrack(f.trackId)">▶</button>
+        <button class="rounded bg-green-600/80 px-2 py-1 text-xs hover:bg-green-500" @click="playTrack(f.trackId, f.title, f.artist)">▶</button>
         <button class="px-1 text-xs text-gray-500 hover:text-red-400" @click="unfavorite(f.trackId)">✕</button>
       </li>
     </ul>

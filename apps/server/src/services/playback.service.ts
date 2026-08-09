@@ -205,6 +205,12 @@ export class PlaybackService {
     });
     this.lastLoadAt.set(deviceId, Date.now());
 
+    // Playlist-radio items carry no artist — enrich in the background (one
+    // oEmbed lookup per track, cached 24h) once playback starts.
+    if (!item.track.artist || item.track.artist === "Unknown") {
+      void this.enrichTrackMetadata(deviceId, item);
+    }
+
     // Phase 8: record playback history (PRD §29) — device.userId set at pairing
     const device = await prisma.device
       .findUnique({ where: { id: deviceId }, select: { userId: true } })
@@ -222,6 +228,26 @@ export class PlaybackService {
           },
         })
         .catch(() => null);
+    }
+  }
+
+  /** Background metadata enrichment for tracks missing artist (playlist radio). */
+  private async enrichTrackMetadata(deviceId: string, item: QueueItem): Promise<void> {
+    try {
+      const meta = await musicService.getTrack(item.track.id);
+      if (!meta?.artist || meta.artist === "Unknown") return;
+      const enriched = {
+        title: meta.title && meta.title !== item.track.id ? meta.title : item.track.title,
+        artist: meta.artist,
+        duration: meta.duration > 0 ? meta.duration : item.track.duration,
+      };
+      await queueService.updateTrackMetadata(deviceId, item.track.id, enriched);
+      const state = await this.getState(deviceId);
+      if (state?.track && state.track.id === item.track.id) {
+        await this.patchState(deviceId, { track: { ...state.track, ...enriched } });
+      }
+    } catch {
+      // enrichment is best-effort — never fail playback for it
     }
   }
 

@@ -9,9 +9,15 @@ async function load(): Promise<void> {
   history.value = (await api.history()).history;
 }
 
-async function playTrack(trackId: string): Promise<void> {
+async function playTrack(trackId: string, title: string, artist: string): Promise<void> {
   if (!store.selectedDevice) return;
-  await api.play(store.selectedDevice, trackId);
+  await api.play(store.selectedDevice, trackId, {
+    id: trackId,
+    provider: "youtube-music",
+    title,
+    artist,
+    duration: 0,
+  });
   await refreshState();
 }
 
@@ -29,7 +35,7 @@ onMounted(load);
             {{ h.artist }} · {{ new Date(h.playedAt).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) }}
           </div>
         </div>
-        <button class="rounded bg-green-600/80 px-2 py-1 text-xs hover:bg-green-500" @click="playTrack(h.trackId)">▶</button>
+        <button class="rounded bg-green-600/80 px-2 py-1 text-xs hover:bg-green-500" @click="playTrack(h.trackId, h.title, h.artist)">▶</button>
       </li>
     </ul>
     <p v-else class="py-3 text-center text-sm text-gray-500">Belum ada riwayat — mulai putar sesuatu.</p>

@@ -47,10 +47,15 @@ export class QueueService {
 
   /** Player-reported authoritative duration (D-08) — fixes 0:00 tracks. */
   async updateTrackDuration(deviceId: string, trackId: string, duration: number): Promise<void> {
+    await this.updateTrackMetadata(deviceId, trackId, { duration });
+  }
+
+  /** Patch a queue item's track metadata (duration, artist, thumbnail…). */
+  async updateTrackMetadata(deviceId: string, trackId: string, patch: Partial<Track>): Promise<void> {
     const queue = await this.get(deviceId);
     const item = queue.find((i) => i.track.id === trackId);
-    if (item && item.track.duration !== duration) {
-      item.track.duration = duration;
+    if (item) {
+      item.track = { ...item.track, ...patch };
       await this.set(deviceId, queue);
     }
   }

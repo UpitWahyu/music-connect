@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { Search as SearchIcon, Play, Plus, Heart, FolderPlus, X } from "lucide-vue-next";
+import { Search as SearchIcon, Play, Plus, Heart, FolderPlus, X, Link2 } from "lucide-vue-next";
 import { api, type TrackDTO } from "../lib/api";
 import { store, refreshQueue, refreshState, refreshPlaylists } from "../composables/useMusic";
 import { formatDuration } from "../lib/format";
@@ -9,6 +9,42 @@ const query = ref("");
 const results = ref<TrackDTO[]>([]);
 const busy = ref(false);
 const saveFor = ref<TrackDTO | null>(null);
+
+// --- play playlist from a shared link (modal) ---
+const showLinkModal = ref(false);
+const linkUrl = ref("");
+const linkBusy = ref(false);
+const linkError = ref("");
+
+function parseListId(url: string): string | null {
+  const m = url.match(/[?&]list=([A-Za-z0-9_-]{10,})/);
+  return m ? m[1] : null;
+}
+
+async function playLink(): Promise<void> {
+  linkError.value = "";
+  if (!store.selectedDevice) {
+    linkError.value = "Pilih device dulu di panel ⋯";
+    return;
+  }
+  const listId = parseListId(linkUrl.value.trim());
+  if (!listId) {
+    linkError.value = "Link tidak valid — harus berisi ?list=… (YouTube/YouTube Music)";
+    return;
+  }
+  linkBusy.value = true;
+  try {
+    await api.playPlaylist(store.selectedDevice, listId);
+    showLinkModal.value = false;
+    linkUrl.value = "";
+    await refreshQueue();
+    await refreshState();
+  } catch (e) {
+    linkError.value = "Gagal memuat playlist: " + ((e as Error).message || "coba lagi");
+  } finally {
+    linkBusy.value = false;
+  }
+}
 
 async function doSearch(): Promise<void> {
   if (!query.value.trim()) return;
@@ -77,6 +113,14 @@ async function saveToPlaylist(playlistId: string): Promise<void> {
           <X :size="14" />
         </button>
       </div>
+      <button
+        type="button"
+        class="rounded-xl bg-white/10 px-3 text-sm transition hover:bg-white/15"
+        title="Putar playlist dari link"
+        @click="showLinkModal = true"
+      >
+        <Link2 :size="16" />
+      </button>
       <button
         type="submit"
         :disabled="busy"
@@ -148,6 +192,45 @@ async function saveToPlaylist(playlistId: string): Promise<void> {
           <p v-else class="text-xs text-neutral-500">Belum ada playlist — buat di tab Playlist</p>
         </div>
       </li>
-    </ul>
+    <p v-else class="py-3 text-center text-sm text-neutral-500">Cari lagu, artis, atau tempel link playlist</p>
+
+    <!-- playlist link modal -->
+    <div
+      v-if="showLinkModal"
+      class="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center"
+      @click.self="showLinkModal = false"
+    >
+      <div class="w-full max-w-md rounded-t-2xl border border-white/10 bg-[#16161f] p-5 shadow-2xl shadow-black/60 sm:rounded-2xl">
+        <div class="mb-3 flex items-center justify-between">
+          <h3 class="flex items-center gap-2 text-sm font-semibold">
+            <Link2 :size="15" class="text-green-400" />
+            Putar Playlist dari Link
+          </h3>
+          <button class="rounded-lg p-1.5 text-neutral-400 transition hover:bg-white/10 hover:text-white" @click="showLinkModal = false">
+            <X :size="15" />
+          </button>
+        </div>
+        <input
+          v-model="linkUrl"
+          type="url"
+          placeholder="https://music.youtube.com/playlist?list=…"
+          class="w-full rounded-xl border border-white/5 bg-[#14141c] px-3 py-2.5 text-sm outline-none placeholder:text-neutral-600 focus:border-green-500/40"
+          @keyup.enter="playLink"
+        />
+        <p v-if="linkError" class="mt-2 text-xs text-red-400">{{ linkError }}</p>
+        <div class="mt-4 flex gap-2">
+          <button
+            class="flex-1 rounded-xl bg-green-500 py-2.5 text-sm font-semibold text-black transition hover:bg-green-400 disabled:opacity-50"
+            :disabled="linkBusy || !linkUrl.trim()"
+            @click="playLink"
+          >
+            {{ linkBusy ? "Memuat…" : "Mainkan" }}
+          </button>
+          <button class="rounded-xl bg-white/10 px-4 text-sm transition hover:bg-white/15" @click="showLinkModal = false">
+            Batal
+          </button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>

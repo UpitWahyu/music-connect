@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createConnection, type Socket } from "node:net";
+import { unlinkSync } from "node:fs";
 import { EventEmitter } from "node:events";
 
 export interface MpvState {
@@ -58,6 +59,14 @@ export class Mpv extends EventEmitter {
   start(): void {
     // MPV_BIN lets unusual environments (Termux, portable builds) point at mpv
     const bin = process.env.MPV_BIN ?? "mpv";
+    if (!this.isTcp) {
+      // a stale socket file from a previous run would make mpv fail to bind
+      try {
+        unlinkSync(this.host);
+      } catch {
+        // no stale socket — fine
+      }
+    }
     this.proc = spawn(bin, ["--no-video", "--idle=yes", this.ipcArg], {
       stdio: ["ignore", "ignore", "pipe"],
     });

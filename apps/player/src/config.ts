@@ -23,10 +23,11 @@ export function loadConfig(): PlayerConfig {
     deviceType: process.env.DEVICE_TYPE ?? "desktop",
     pairingCode: process.env.PAIRING_CODE,
     // D-04: IPC endpoint — named pipe on Windows (mpv Windows has no TCP IPC),
-    // unix socket elsewhere. MPV_IPC overrides (e.g. a custom socket path on
-    // Termux where /tmp may misbehave).
+    // unix socket in the home dir elsewhere (Termux /tmp misbehaves, $HOME
+    // always works). MPV_IPC overrides.
     mpvIpc:
-      process.env.MPV_IPC ?? (process.platform === "win32" ? "\\\\.\\pipe\\music-mpv" : "/tmp/music-mpv.sock"),
+      process.env.MPV_IPC ??
+      (process.platform === "win32" ? "\\\\.\\pipe\\music-mpv" : path.join(homedir(), ".music-mpv.sock")),
     heartbeatMs: Number(process.env.HEARTBEAT_MS ?? 5000), // D-06
     stateReportMs: Number(process.env.STATE_REPORT_MS ?? 2000), // D-06
   };

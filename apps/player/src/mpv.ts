@@ -35,7 +35,9 @@ export class Mpv extends EventEmitter {
   }
 
   start(): void {
-    this.proc = spawn("mpv", ["--no-video", "--idle=yes", `--input-ipc-server=${this.socketPath}`], {
+    // MPV_BIN lets unusual environments (Termux, portable builds) point at mpv
+    const bin = process.env.MPV_BIN ?? "mpv";
+    this.proc = spawn(bin, ["--no-video", "--idle=yes", `--input-ipc-server=${this.socketPath}`], {
       stdio: ["ignore", "ignore", "pipe"],
     });
     this.proc.stderr?.on("data", (d: Buffer) => this.emit("stderr", d.toString()));

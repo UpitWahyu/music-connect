@@ -42,7 +42,7 @@ export class Mpv extends EventEmitter {
     const tcp = ipcEndpoint.match(/^([^:/]+):(\d+)$/);
     if (tcp) {
       this.isTcp = true;
-      this.host = tcp[1];
+      this.host = tcp[1] ?? ipcEndpoint;
       this.port = Number(tcp[2]);
     } else {
       this.isTcp = false;

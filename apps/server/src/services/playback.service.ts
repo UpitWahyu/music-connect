@@ -156,15 +156,13 @@ export class PlaybackService {
    */
   async transfer(from: string, to: string): Promise<void> {
     const state = await this.getState(from);
-    if (!state) throw new Error("NO_STATE");
-    if (state.track) {
-      const media: MediaRef = { mode: "id", youtubeId: state.track.id };
-      this.requireOnline(
-        sendToPlayer(to, { type: "player.load", trackId: state.track.id, media, position: state.position }),
-      );
-      this.requireOnline(sendToPlayer(to, { type: "player.play" }));
-      await autoQueueService.ensure(to, state.track.id);
-    }
+    if (!state?.track) throw new Error("NOTHING_TO_TRANSFER"); // never clobber the target's state
+    const media: MediaRef = { mode: "id", youtubeId: state.track.id };
+    this.requireOnline(
+      sendToPlayer(to, { type: "player.load", trackId: state.track.id, media, position: state.position }),
+    );
+    this.requireOnline(sendToPlayer(to, { type: "player.play" }));
+    await autoQueueService.ensure(to, state.track.id);
     await this.patchState(to, { state: "playing", track: state.track, position: state.position, queueIndex: state.queueIndex });
     this.requireOnline(sendToPlayer(from, { type: "player.stop" }));
     await this.patchState(from, { state: "stopped", position: 0 });
@@ -174,6 +172,12 @@ export class PlaybackService {
   async applyPlayerReport(deviceId: string, report: PlayerStateReport): Promise<void> {
     const cur = (await this.getState(deviceId)) ?? EMPTY_STATE(deviceId);
     let track = cur.track && cur.track.id === report.trackId ? cur.track : null;
+    // self-heal: if the state lost its track (e.g. a bad transfer), restore it
+    // from the queue using the id the player reports
+    if (!track && report.trackId) {
+      const item = (await queueService.get(deviceId)).find((i) => i.track.id === report.trackId);
+      if (item) track = item.track;
+    }
     // authoritative duration from mpv fixes 0:00 (oEmbed tracks have no duration)
     if (track && report.duration && report.duration > 0 && track.duration !== report.duration) {
       track = { ...track, duration: report.duration };

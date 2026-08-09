@@ -17,6 +17,8 @@ export default defineConfig(({ mode }) => {
     },
     preview: {
       port: 3018,
+      // allow akses via domain publik
+      allowedHosts: ["music.example.com", "api.music.example.com"],
       // production preview proxy → music server (PM2 sets PREVIEW_TARGET)
       proxy: {
         "/api": process.env.PREVIEW_TARGET ?? "http://localhost:3019",

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import type { Track } from "@music-connect/types";
 import { extractPlaylistId } from "../utils.js";
 import { playbackService } from "../services/playback.service.js";
 
@@ -17,9 +18,9 @@ export async function playbackRoutes(app: FastifyInstance): Promise<void> {
 
   app.post("/api/devices/:id/play", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body = (req.body ?? {}) as { trackId?: string };
+    const body = (req.body ?? {}) as { trackId?: string; track?: Track };
     try {
-      if (body.trackId) await playbackService.play(id, body.trackId, { mode: "id", youtubeId: body.trackId });
+      if (body.trackId) await playbackService.play(id, body.trackId, body.track);
       else await playbackService.play(id);
       return { ok: true };
     } catch (e) {

@@ -36,7 +36,7 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
     const item = queue.find((i) => i.id === itemId);
     if (!item) return reply.code(404).send({ error: "ITEM_NOT_FOUND" });
     try {
-      await playbackService.play(id, item.track.id, { mode: "id", youtubeId: item.track.id });
+      await playbackService.play(id, item.track.id, item.track);
       return { ok: true };
     } catch (e) {
       return reply.code(409).send({ error: (e as Error).message });

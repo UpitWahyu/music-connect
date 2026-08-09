@@ -21,7 +21,9 @@ async function doSearch(): Promise<void> {
 
 async function playNow(track: TrackDTO): Promise<void> {
   if (!store.selectedDevice) return;
-  await api.play(store.selectedDevice, track.id);
+  // send full metadata from the search result — server uses it directly
+  // (no oEmbed fallback → correct artist + duration immediately)
+  await api.play(store.selectedDevice, track.id, track);
   await refreshState();
 }
 

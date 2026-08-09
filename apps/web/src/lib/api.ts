@@ -112,8 +112,11 @@ export const api = {
 
   state: (deviceId: string) => request<{ state: PlaybackStateDTO | null }>(`/devices/${deviceId}/state`),
 
-  play: (deviceId: string, trackId?: string) =>
-    request<{ ok: boolean }>(`/devices/${deviceId}/play`, { method: "POST", body: JSON.stringify(trackId ? { trackId } : {}) }),
+  play: (deviceId: string, trackId?: string, track?: TrackDTO) =>
+    request<{ ok: boolean }>(`/devices/${deviceId}/play`, {
+      method: "POST",
+      body: JSON.stringify(trackId ? { trackId, track } : {}),
+    }),
   pause: (deviceId: string) => request(`/devices/${deviceId}/pause`, { method: "POST", body: "{}" }),
   resume: (deviceId: string) => request(`/devices/${deviceId}/resume`, { method: "POST", body: "{}" }),
   next: (deviceId: string) => request(`/devices/${deviceId}/next`, { method: "POST", body: "{}" }),

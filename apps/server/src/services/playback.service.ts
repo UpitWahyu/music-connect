@@ -29,13 +29,16 @@ export class PlaybackService {
   /** When each device last received a track load (anti auto-next loop). */
   private lastLoadAt = new Map<string, number>();
 
-  async play(deviceId: string, trackId?: string, media?: MediaRef): Promise<void> {
-    if (trackId && media) {
+  async play(deviceId: string, trackId?: string, track?: Track): Promise<void> {
+    if (trackId) {
       const item = await queueService.placeCurrent(deviceId, trackId);
       if (item) {
         await this.loadTrack(deviceId, item);
       } else {
-        const track =
+        // prefer full metadata from the controller (search result); fall back
+        // to provider metadata, then to a bare track (last resort)
+        const resolved: Track =
+          track ??
           (await musicService.getTrack(trackId)) ?? {
             id: trackId,
             provider: "youtube-music",
@@ -43,7 +46,7 @@ export class PlaybackService {
             artist: "Unknown",
             duration: 0,
           };
-        const inserted = await queueService.insertAtCurrent(deviceId, track);
+        const inserted = await queueService.insertAtCurrent(deviceId, resolved);
         await this.loadTrack(deviceId, inserted);
       }
       // keep the recommendation pipeline fed (auto-queue)

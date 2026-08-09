@@ -99,14 +99,28 @@ export async function refreshAll(): Promise<void> {
   await Promise.all([refreshQueue(), refreshState()]);
 }
 
-// --- polling fallback (WS events will make this unnecessary later) ---
+// --- polling fallback (WS events make this unnecessary later) ---
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Cross-browser fallback: follow the account-wide selected device. */
+async function syncSelectedDevice(): Promise<void> {
+  const sel = await api.getSelectedDevice().catch(() => null);
+  if (
+    sel?.deviceId &&
+    sel.deviceId !== store.selectedDevice &&
+    store.devices.some((d) => d.id === sel.deviceId)
+  ) {
+    store.selectedDevice = sel.deviceId;
+    void refreshAll();
+  }
+}
 
 export function startPolling(): void {
   if (pollTimer) return;
   pollTimer = setInterval(() => {
     void refreshAll();
     void refreshDevices(); // keep device list fresh (auto-select when online appears)
+    void syncSelectedDevice(); // device selection sync even if WS events drop
   }, 3000);
 }
 

@@ -146,7 +146,7 @@ async function playLink(): Promise<void> {
             <SearchIcon :size="15" class="text-green-400" />
             Cari Lagu
           </h3>
-          <button class="rounded-lg p-1.5 text-neutral-400 transition hover:bg-white/10 hover:text-white" @click="closeSearch">
+          <button type="button" class="rounded-lg p-1.5 text-neutral-400 transition hover:bg-white/10 hover:text-white" @click="closeSearch">
             <X :size="15" />
           </button>
         </div>
@@ -162,6 +162,7 @@ async function playLink(): Promise<void> {
             />
             <button
               v-if="query"
+              type="button"
               class="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-neutral-500 transition hover:bg-white/10 hover:text-white"
               @click="resetSearch"
             >
@@ -255,7 +256,7 @@ async function playLink(): Promise<void> {
             <Link2 :size="15" class="text-green-400" />
             Putar Playlist dari Link
           </h3>
-          <button class="rounded-lg p-1.5 text-neutral-400 transition hover:bg-white/10 hover:text-white" @click="showLink = false">
+          <button type="button" class="rounded-lg p-1.5 text-neutral-400 transition hover:bg-white/10 hover:text-white" @click="showLink = false">
             <X :size="15" />
           </button>
         </div>
@@ -275,7 +276,7 @@ async function playLink(): Promise<void> {
           >
             {{ linkBusy ? "Memuat…" : "Mainkan" }}
           </button>
-          <button class="rounded-xl bg-white/10 px-4 text-sm transition hover:bg-white/15" @click="showLink = false">
+          <button type="button" class="rounded-xl bg-white/10 px-4 text-sm transition hover:bg-white/15" @click="showLink = false">
             Batal
           </button>
         </div>

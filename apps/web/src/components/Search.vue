@@ -125,9 +125,6 @@ async function playLink(): Promise<void> {
         <span class="text-sm font-medium">Playlist dari Link</span>
       </button>
     </div>
-    <p class="text-center text-xs text-neutral-600">
-      Pilih device di panel ⋯ lalu putar musik
-    </p>
 
     <!-- ============ search modal ============ -->
     <div

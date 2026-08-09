@@ -23,7 +23,9 @@ $body = @{ username = $Username; password = $env:MUSIC_PASSWORD } | ConvertTo-Js
 $login = Invoke-RestMethod -Uri "$Server/api/auth/login" -Method Post -ContentType "application/json" -Body $body
 
 Write-Host "→ Generate pairing code untuk '$DeviceId' ..."
-$result = Invoke-RestMethod -Uri "$Server/api/devices/$DeviceId/pair" -Method Post -Headers @{ Authorization = "Bearer $($login.token)" }
+$result = Invoke-RestMethod -Uri "$Server/api/devices/$DeviceId/pair" -Method Post `
+    -Headers @{ Authorization = "Bearer $($login.token)" } `
+    -ContentType "application/json" -Body "{}"
 
 Write-Host ""
 Write-Host "════════════════════════════════════════════════" -ForegroundColor Cyan

@@ -26,6 +26,9 @@ const EMPTY_STATE = (deviceId: string): PlaybackState => ({
  * Auto-next (§25) + auto-queue recommendations keep playback flowing.
  */
 export class PlaybackService {
+  /** When each device last received a track load (anti auto-next loop). */
+  private lastLoadAt = new Map<string, number>();
+
   async play(deviceId: string, trackId?: string, media?: MediaRef): Promise<void> {
     if (trackId && media) {
       const item = await queueService.placeCurrent(deviceId, trackId);
@@ -111,6 +114,10 @@ export class PlaybackService {
 
   /** Player → server: track finished (PRD §25). */
   async onTrackEnded(deviceId: string): Promise<void> {
+    // anti-loop: ignore if the track was replaced less than 3s ago (a
+    // stale end-file from the previous track must not skip the new one)
+    const last = this.lastLoadAt.get(deviceId) ?? 0;
+    if (Date.now() - last < 3000) return;
     await this.next(deviceId);
   }
 
@@ -188,6 +195,7 @@ export class PlaybackService {
       position: 0,
       queueIndex: await queueService.getIndex(deviceId),
     });
+    this.lastLoadAt.set(deviceId, Date.now());
 
     // Phase 8: record playback history (PRD §29) — device.userId set at pairing
     const device = await prisma.device

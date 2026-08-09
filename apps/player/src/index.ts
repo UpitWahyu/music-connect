@@ -53,9 +53,14 @@ setInterval(async () => {
   }
 }, config.stateReportMs);
 
-// §25: track ended → server decides what plays next
-mpv.on("end-file", () => {
-  conn.send({ type: "player.trackEnded", deviceId: credentials.deviceId });
+// §25: track ended → server decides what plays next.
+// Only a natural end ("eof") or a hard playback error advances the queue.
+// "stop"/"redirect" happen when the server itself replaced the track
+// (player.load) — forwarding those would loop through the whole queue.
+mpv.on("end-file", (reason: string) => {
+  if (reason === "eof" || reason === "error") {
+    conn.send({ type: "player.trackEnded", deviceId: credentials.deviceId });
+  }
 });
 
 mpv.on("error", (err) => {

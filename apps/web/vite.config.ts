@@ -15,5 +15,13 @@ export default defineConfig(({ mode }) => {
         "/ws": { target: target.replace(/^http/, "ws"), ws: true },
       },
     },
+    preview: {
+      port: 4180,
+      // production preview proxy → music server (PM2 sets PREVIEW_TARGET)
+      proxy: {
+        "/api": process.env.PREVIEW_TARGET ?? "http://localhost:3019",
+        "/ws": { target: (process.env.PREVIEW_TARGET ?? "http://localhost:3019").replace(/^http/, "ws"), ws: true },
+      },
+    },
   };
 });

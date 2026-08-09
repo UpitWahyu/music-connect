@@ -7,6 +7,11 @@ export const redis = new Redis(config.redisUrl, {
   retryStrategy: (times) => Math.min(times * 500, 5000),
 });
 
+// never crash on transient Redis errors / late disconnect rejections
+redis.on("error", () => {
+  /* handled by retryStrategy + /ready health check */
+});
+
 export async function connectRedis(): Promise<void> {
   await redis.connect();
 }

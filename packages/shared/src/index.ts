@@ -18,6 +18,7 @@ export const RedisKeys = {
   pairingCode: (code: string): string => `music:pairing:${code}`,
   pairingDevice: (deviceId: string): string => `music:pairing:device:${deviceId}`,
   pairingUser: (code: string): string => `music:pairing:user:${code}`,
+  pairingAttempts: (code: string): string => `music:pairing:attempts:${code}`,
   cacheSearch: (query: string): string => `music:cache:search:${query.toLowerCase()}`,
   cacheMetadata: (provider: string, id: string): string => `music:cache:meta:${provider}:${id}`,
   cacheRecommendations: (trackId: string): string => `music:cache:upnext:${trackId}`,

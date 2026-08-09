@@ -55,6 +55,8 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
     const queue = await queueService.get(id);
     const item = queue.find((i) => i.id === itemId);
     if (!item) return reply.code(404).send({ error: "ITEM_NOT_FOUND" });
+    // move the global cursor to the played item (also keeps the UI highlight right)
+    await queueService.setIndex(id, queue.findIndex((i) => i.id === itemId));
     try {
       await playbackService.play(id, item.track.id, item.track);
       return { ok: true };

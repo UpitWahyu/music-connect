@@ -12,6 +12,9 @@ import { prisma } from "../db/prisma.js";
  * The queue is **global per account**: every device of the same user shares
  * one queue (Spotify-like). Devices paired without a user (test rigs) fall
  * back to a per-device queue keyed by their id.
+ *
+ * All mutations go through `mutate()` which uses Redis WATCH/MULTI (optimistic
+ * locking) so concurrent controllers can never lose each other's updates.
  */
 export class QueueService {
   /** device → owning userId. Cached with a TTL — pairing may set userId AFTER
@@ -32,6 +35,24 @@ export class QueueService {
     return index ? RedisKeys.userQueueIndex(owner) : RedisKeys.userQueue(owner);
   }
 
+  /**
+   * Read-modify-write with optimistic concurrency control (WATCH/MULTI).
+   * Retries on conflict; throws QUEUE_CONFLICT after giving up.
+   */
+  private async mutate(deviceId: string, fn: (q: QueueItem[]) => QueueItem[]): Promise<QueueItem[]> {
+    const owner = await this.ownerOf(deviceId);
+    const key = this.keyOf(owner);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await redis.watch(key);
+      const queue = await this.get(deviceId);
+      const next = fn(queue);
+      const res = await redis.multi().set(key, JSON.stringify(next)).exec();
+      if (res) return next;
+      // watched key changed under us — retry
+    }
+    throw new Error("QUEUE_CONFLICT");
+  }
+
   async get(deviceId: string): Promise<QueueItem[]> {
     const owner = await this.ownerOf(deviceId);
     const raw = await redis.get(this.keyOf(owner));
@@ -39,35 +60,42 @@ export class QueueService {
   }
 
   async set(deviceId: string, items: QueueItem[]): Promise<QueueItem[]> {
-    const owner = await this.ownerOf(deviceId);
-    await redis.set(this.keyOf(owner), JSON.stringify(items));
-    return items;
+    return this.mutate(deviceId, () => items);
   }
 
   async add(deviceId: string, track: Track, position?: "next"): Promise<QueueItem[]> {
-    const queue = await this.get(deviceId);
     const item: QueueItem = { id: randomUUID(), track, addedBy: "user" };
-    if (position === "next") queue.splice(1, 0, item); // play next
-    else queue.push(item);
-    return this.set(deviceId, queue);
+    if (position === "next") {
+      // "Play next": insert right after the current track (cursor-aware),
+      // not hardcoded at index 1
+      const current = await this.getIndex(deviceId);
+      return this.mutate(deviceId, (queue) => {
+        queue.splice(Math.min(current + 1, queue.length), 0, item);
+        return queue;
+      });
+    }
+    return this.mutate(deviceId, (queue) => {
+      queue.push(item);
+      return queue;
+    });
   }
 
   /** Auto-queued recommendations are marked addedBy: "auto". */
   async addAuto(deviceId: string, track: Track): Promise<QueueItem[]> {
-    const queue = await this.get(deviceId);
     const item: QueueItem = { id: randomUUID(), track, addedBy: "auto" };
-    queue.push(item);
-    return this.set(deviceId, queue);
+    return this.mutate(deviceId, (queue) => {
+      queue.push(item);
+      return queue;
+    });
   }
 
   async remove(deviceId: string, itemId: string): Promise<QueueItem[]> {
-    const queue = await this.get(deviceId);
-    return this.set(deviceId, queue.filter((i) => i.id !== itemId));
+    return this.mutate(deviceId, (queue) => queue.filter((i) => i.id !== itemId));
   }
 
   async clear(deviceId: string): Promise<QueueItem[]> {
     await this.setIndex(deviceId, 0);
-    return this.set(deviceId, []);
+    return this.mutate(deviceId, () => []);
   }
 
   /** Player-reported authoritative duration (D-08) — fixes 0:00 tracks. */
@@ -77,26 +105,26 @@ export class QueueService {
 
   /** Patch a queue item's track metadata (duration, artist, thumbnail…). */
   async updateTrackMetadata(deviceId: string, trackId: string, patch: Partial<Track>): Promise<void> {
-    const queue = await this.get(deviceId);
-    const item = queue.find((i) => i.track.id === trackId);
-    if (item) {
-      item.track = { ...item.track, ...patch };
-      await this.set(deviceId, queue);
-    }
+    await this.mutate(deviceId, (queue) => {
+      const item = queue.find((i) => i.track.id === trackId);
+      if (item) item.track = { ...item.track, ...patch };
+      return queue;
+    });
   }
 
   /** Reorder the queue by a client-supplied list of item ids (must cover all items). */
   async reorder(deviceId: string, order: string[]): Promise<QueueItem[]> {
-    const queue = await this.get(deviceId);
-    if (order.length !== queue.length) throw new Error("ORDER_MISMATCH");
-    const byId = new Map(queue.map((i) => [i.id, i]));
-    const reordered: QueueItem[] = [];
-    for (const id of order) {
-      const item = byId.get(id);
-      if (!item) throw new Error("ORDER_INVALID");
-      reordered.push(item);
-    }
-    return this.set(deviceId, reordered);
+    return this.mutate(deviceId, (queue) => {
+      if (order.length !== queue.length) throw new Error("ORDER_MISMATCH");
+      const byId = new Map(queue.map((i) => [i.id, i]));
+      const reordered: QueueItem[] = [];
+      for (const id of order) {
+        const item = byId.get(id);
+        if (!item) throw new Error("ORDER_INVALID");
+        reordered.push(item);
+      }
+      return reordered;
+    });
   }
 
   // --- current position (server-authoritative, D-08) ---
@@ -137,11 +165,12 @@ export class QueueService {
 
   /** Insert at the current position (Spotify "play now" semantics). */
   async insertAtCurrent(deviceId: string, track: Track, addedBy: string = "user"): Promise<QueueItem> {
-    const queue = await this.get(deviceId);
-    const index = await this.getIndex(deviceId);
     const item: QueueItem = { id: randomUUID(), track, addedBy };
-    queue.splice(index, 0, item);
-    await this.set(deviceId, queue);
+    const index = await this.getIndex(deviceId);
+    await this.mutate(deviceId, (queue) => {
+      queue.splice(Math.min(index, queue.length), 0, item);
+      return queue;
+    });
     return item;
   }
 }

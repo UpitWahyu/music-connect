@@ -26,8 +26,13 @@ export function registerPlayer(deviceId: string, socket: SocketLike): void {
   players.set(deviceId, socket);
 }
 
-export function unregisterPlayer(deviceId: string): void {
-  players.delete(deviceId);
+/**
+ * Remove a player connection — but ONLY if the socket still owns the entry.
+ * Prevents a stale (old) connection from deleting a newer registration during
+ * a reconnect race.
+ */
+export function unregisterPlayer(deviceId: string, socket: SocketLike): void {
+  if (players.get(deviceId) === socket) players.delete(deviceId);
 }
 
 /** Live presence — source of truth for the device list (Redis set can go stale). */

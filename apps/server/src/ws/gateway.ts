@@ -54,7 +54,14 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
     let deviceId: string | null = null;
 
     s.on("message", (raw) => {
-      const msg = JSON.parse(String(raw)) as Record<string, unknown>;
+      let msg: Record<string, unknown>;
+      try {
+        msg = JSON.parse(String(raw)) as Record<string, unknown>;
+      } catch {
+        // malformed payload — never crash the socket
+        s.close(4400, "BAD_JSON");
+        return;
+      }
       if (!deviceId) {
         if (
           msg.type === "player.auth" &&
@@ -105,7 +112,7 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
 
     s.on("close", () => {
       if (deviceId) {
-        unregisterPlayer(deviceId);
+        unregisterPlayer(deviceId, s);
         void deviceService.markOffline(deviceId);
       }
     });

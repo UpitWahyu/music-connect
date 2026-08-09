@@ -4,7 +4,8 @@ import jwt from "@fastify/jwt";
 import rateLimit from "@fastify/rate-limit";
 import websocket from "@fastify/websocket";
 import { config } from "./config.js";
-import { connectRedis } from "./redis/client.js";
+import { redis, connectRedis } from "./redis/client.js";
+import { prisma } from "./db/prisma.js";
 import { authRoutes, ensureSeedUser } from "./api/auth.js";
 import { deviceRoutes } from "./api/devices.js";
 import { searchRoutes } from "./api/search.js";
@@ -24,13 +25,25 @@ app.addContentTypeParser("application/json", { parseAs: "string" }, (_req, body,
   }
 });
 
-await app.register(cors, { origin: true });
+// CORS: allowlist from env (comma-separated), permissive only in dev
+const corsOrigin = config.corsOrigin.length ? config.corsOrigin : true;
+await app.register(cors, { origin: corsOrigin });
 await app.register(jwt, { secret: config.jwtSecret });
 await app.register(rateLimit, { max: 300, timeWindow: "1 minute" }); // generous: web polls + volume debounce
-await app.register(websocket);
+await app.register(websocket, { options: { maxPayload: 64 * 1024 } }); // 64 KB WS message cap
 
-// Health endpoint (PRD §41 D-12) — for Tianji / uptime monitoring
+// Health / readiness (PRD §41 D-12) — for Tianji / uptime monitoring
 app.get("/healthz", async () => ({ status: "ok", uptime: process.uptime() }));
+app.get("/health", async () => ({ status: "ok", uptime: process.uptime() }));
+app.get("/ready", async (_req, reply) => {
+  try {
+    await redis.ping();
+    await prisma.$queryRaw`SELECT 1`;
+    return { status: "ok", redis: "ok", mysql: "ok" };
+  } catch (e) {
+    return reply.code(503).send({ status: "degraded", error: (e as Error).message });
+  }
+});
 
 // Auth guard (PRD §30): all /api/* routes require a JWT except login and the
 // public player pairing flow. WebSocket has its own first-message auth (D-07).
@@ -57,3 +70,22 @@ await registerWsGateway(app);
 await connectRedis();
 await ensureSeedUser(); // DB-backed credentials: env only seeds the first user
 await app.listen({ port: config.port, host: config.host });
+
+// Graceful shutdown (PM2 / Docker / systemd)
+async function shutdown(signal: string): Promise<void> {
+  app.log.info({ signal }, "shutting down gracefully");
+  try {
+    await app.close(); // stop accepting requests/WS, drain in-flight
+  } catch (e) {
+    app.log.error({ err: e }, "error during close");
+  }
+  try {
+    await redis.quit();
+  } catch {
+    /* already closed */
+  }
+  await prisma.$disconnect().catch(() => null);
+  process.exit(0);
+}
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));

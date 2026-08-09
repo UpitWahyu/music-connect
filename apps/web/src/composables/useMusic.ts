@@ -39,9 +39,11 @@ export async function refreshDevices(): Promise<void> {
   // pick the first online device (Spotify-like "play here" behaviour).
   const cur = store.devices.find((d) => d.id === store.selectedDevice);
   if ((!store.selectedDevice || !cur) && store.devices.length) {
-    const online = store.devices.find((d) => d.online) ?? store.devices[0];
-    store.selectedDevice = online.id;
-    await Promise.all([refreshQueue(), refreshState()]);
+    const online = store.devices.find((d) => d.online);
+    if (online) {
+      store.selectedDevice = online.id;
+      await Promise.all([refreshQueue(), refreshState()]);
+    }
   }
 }
 

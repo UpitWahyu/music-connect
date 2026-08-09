@@ -35,6 +35,8 @@ node -v && pnpm -v && mpv --version | head -1 && yt-dlp --version
 git clone https://github.com/your-username/music-connect.git
 cd music-connect
 pnpm install                     # workspace: types/protocol/shared
+# build library internal dulu (di mesin baru dist/ belum ada)
+pnpm --filter @music-connect/types --filter @music-connect/protocol --filter @music-connect/shared build
 pnpm --filter @music-connect/player build
 ```
 

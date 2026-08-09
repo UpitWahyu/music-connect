@@ -33,6 +33,15 @@ Controller ──WS──▶ Music Server ──WS──▶ Player Agent ──J
 
 ## Quickstart (development)
 
+Requires Node.js 20+ and pnpm. Install pnpm via corepack:
+
+```bash
+npm install -g corepack@latest
+corepack enable pnpm
+```
+
+Then:
+
 ```bash
 pnpm install
 docker compose up -d mysql redis

@@ -23,6 +23,18 @@ Web / Phone ──wss──▶ YOUR_SERVER ──▶ server :3019 ──command�
 > resolution fails. On Termux, audio can be grabbed by other apps — run
 > `termux-wake-lock` so the process is not suspended.
 
+**Install pnpm (recommended):**
+
+```bash
+npm install -g corepack@latest
+corepack enable pnpm
+```
+
+> If `pnpm` is still missing after `corepack enable`, run
+> `corepack prepare pnpm@latest --activate`. On Windows, version-manager
+> shims in npm's global bin can conflict with corepack — remove stale
+> `pnpm*` shims (or use `winget install pnpm.pnpm`) if needed.
+
 Verify everything is installed:
 
 ```bash

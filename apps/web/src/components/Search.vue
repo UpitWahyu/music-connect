@@ -192,6 +192,7 @@ async function saveToPlaylist(playlistId: string): Promise<void> {
           <p v-else class="text-xs text-neutral-500">Belum ada playlist — buat di tab Playlist</p>
         </div>
       </li>
+    </ul>
     <p v-else class="py-3 text-center text-sm text-neutral-500">Cari lagu, artis, atau tempel link playlist</p>
 
     <!-- playlist link modal -->

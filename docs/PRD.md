@@ -1765,7 +1765,7 @@ pairing codes, never with the user password.
 ## D-04 — Deployment
 
 - Server + Redis + MySQL: on the VPS, reverse-proxied (Nginx Proxy Manager +
-  Cloudflare) under a new subdomain (e.g. `music.example.com`), HTTPS/WSS.
+  Cloudflare) under a subdomain (e.g. `music.example.com`), HTTPS/WSS.
 - Players: PC (mpv) and **Android via Termux** (Node.js + mpv). Manual start —
   **no auto-start** on the player side.
 - mpv IPC: unix socket on Linux/Termux, named pipe on Windows.

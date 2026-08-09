@@ -1,98 +1,97 @@
 # Runbook — Music Player Agent
 
-Pasang player di PC/laptop/Android untuk mulai memutar musik dari
-Music Connect. Player = agent Node.js ringan yang mengontrol **mpv**;
-audio keluar dari perangkat ini, bukan dari server.
+Install the player on a PC / laptop / Android device to play music from
+Music Connect. The player is a lightweight Node.js agent that controls
+**mpv**; audio comes out of this device, not the server.
 
 ```
-Web / HP ──wss──▶ music.example.com ──▶ server :3019 ──command──▶ player agent ──▶ mpv ──▶ speaker
+Web / Phone ──wss──▶ YOUR_SERVER ──▶ server :3019 ──command──▶ player agent ──▶ mpv ──▶ speaker
 ```
 
 ---
 
-## 1. Prasyarat
+## 1. Prerequisites
 
-| Perangkat | Node.js | pnpm | mpv | yt-dlp |
+| Device | Node.js | pnpm | mpv | yt-dlp |
 |---|---|---|---|---|
-| Linux | 20+ | 9+ | ✅ `apt install mpv` | ✅ `apt install yt-dlp` |
-| Windows | 20+ | 9+ | ✅ `winget install mpv` | ✅ `winget install yt-dlp` |
-| macOS | 20+ | 9+ | ✅ `brew install mpv` | ✅ `brew install yt-dlp` |
-| Android (Termux) | ✅ `pkg install nodejs` | ✅ `pkg install pnpm` | ✅ `pkg install mpv` | ✅ `pkg install yt-dlp` |
+| Linux | 20+ | 9+ | `apt install mpv` | `apt install yt-dlp` |
+| Windows | 20+ | 9+ | `winget install mpv` | `winget install yt-dlp` |
+| macOS | 20+ | 9+ | `brew install mpv` | `brew install yt-dlp` |
+| Android (Termux) | `pkg install nodejs` | `pkg install pnpm` | `pkg install mpv` | `pkg install yt-dlp` |
 
-> mpv 0.35+ sudah punya yt-dlp *built-in*; instal yt-dlp terpisah kalau
-> resolusi YouTube gagal. Audio di Termux kadang direbut app lain — pakai
-> `termux-wake-lock` supaya proses tidak di-suspend.
+> mpv 0.35+ has yt-dlp *built in*; install yt-dlp separately if YouTube
+> resolution fails. On Termux, audio can be grabbed by other apps — run
+> `termux-wake-lock` so the process is not suspended.
 
-Cek semua terpasang:
+Verify everything is installed:
 
 ```bash
 node -v && pnpm -v && mpv --version | head -1 && yt-dlp --version
 ```
 
-## 2. Ambil kode player
+## 2. Get the player code
 
 ```bash
-git clone https://github.com/your-username/music-connect.git
+git clone <YOUR_REPO_URL>
 cd music-connect
 pnpm install                     # workspace: types/protocol/shared
-# build library internal dulu (di mesin baru dist/ belum ada)
+# build internal libraries first (dist/ is missing on a fresh clone)
 pnpm --filter @music-connect/types --filter @music-connect/protocol --filter @music-connect/shared build
 pnpm --filter @music-connect/player build
 ```
 
-> Repo ini private — pastikan GitHub auth sudah aktif di mesin
-> (`gh auth login`, atau pakai personal access token).
+## 3. Pairing (once)
 
-## 3. Pairing (hanya sekali)
-
-Buat pairing code dari sisi controller (VPS atau PC mana pun yang punya
-akses ke server):
+Generate a pairing code from the **Settings page** of the web UI (Pairing
+Code section) or from any machine with server access:
 
 ```bash
-MUSIC_PASSWORD=xxx ./scripts/pair-device.sh desktop
-# → Pairing code untuk 'desktop': 123-456 (berlaku 5 menit)
+MUSIC_PASSWORD=xxx ./scripts/pair-device.sh desktop <YOUR_SERVER_URL>
+# → Pairing code for 'desktop': 123-456 (valid 5 minutes, single use)
 ```
 
-Lalu di mesin player, jalankan sekali dengan code itu:
+Then, on the player machine, run once with that code:
 
 ```bash
 cd music-connect/apps/player
 PAIRING_CODE=123-456 pnpm start
 ```
 
-Token device tersimpan otomatis di `~/.config/music-player/credentials.json`
-(Linux/macOS) atau `%USERPROFILE%\.config\music-player\credentials.json`
-(Windows). Jalankan berikutnya tidak perlu pairing lagi.
+The device token is stored automatically in
+`~/.config/music-player/credentials.json`
+(Linux/macOS) or `%USERPROFILE%\.config\music-player\credentials.json`
+(Windows). Subsequent runs do not need pairing again.
 
-## 4. Jalankan player (normal)
+## 4. Run the player (normal)
 
 ```bash
 cd music-connect/apps/player
 pnpm start
 ```
 
-### Env vars (semua opsional kecuali saat pairing)
+### Env vars (all optional except during pairing)
 
-| Var | Default | Keterangan |
+| Var | Default | Notes |
 |---|---|---|
-| `MUSIC_SERVER_URL` | `ws://localhost:3000` | **WAJIB untuk remote**: `wss://music.example.com/ws/player` |
-| `DEVICE_ID` | `desktop` | ID unik device (tampil di web UI) |
-| `DEVICE_NAME` | `Desktop` | Nama ramah (mis. `Living Room`) |
+| `MUSIC_SERVER_URL` | `ws://localhost:3000` | **Required for remote**: `wss://YOUR_SERVER/ws/player` |
+| `DEVICE_ID` | `desktop` | Unique device id (shown in the web UI) |
+| `DEVICE_NAME` | `Desktop` | Friendly name (e.g. `Living Room`) |
 | `DEVICE_TYPE` | `desktop` | `desktop` / `android` / `tv` |
-| `PAIRING_CODE` | – | Hanya untuk pairing pertama |
-| `MPV_SOCKET` | `/tmp/music-mpv.sock` | Lokasi socket mpv (Windows: named pipe otomatis) |
-| `HEARTBEAT_MS` | `5000` | Heartbeat presence |
-| `STATE_REPORT_MS` | `2000` | Laporan posisi saat playing |
+| `PAIRING_CODE` | – | Only for first-time pairing |
+| `MPV_BIN` | `mpv` | Path to the mpv binary (portable builds, Termux) |
+| `MPV_IPC` | `~/.music-mpv.sock` (unix) / named pipe (Windows) | mpv IPC endpoint; can be a unix socket path or `host:port` |
+| `HEARTBEAT_MS` | `5000` | Presence heartbeat |
+| `STATE_REPORT_MS` | `2000` | Position report while playing |
 
-Contoh:
+Example:
 
 ```bash
-MUSIC_SERVER_URL=wss://music.example.com/ws/player \
+MUSIC_SERVER_URL=wss://YOUR_SERVER/ws/player \
 DEVICE_ID=living-room DEVICE_NAME="Living Room" \
 pnpm start
 ```
 
-## 5. Auto-start (opsional)
+## 5. Auto-start (optional)
 
 **Linux (systemd user):** `~/.config/systemd/user/music-player.service`
 
@@ -104,7 +103,7 @@ After=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/home/USER/music-connect/apps/player
-Environment=MUSIC_SERVER_URL=wss://music.example.com/ws/player
+Environment=MUSIC_SERVER_URL=wss://YOUR_SERVER/ws/player
 Environment=DEVICE_ID=living-room
 ExecStart=/usr/bin/node /home/USER/music-connect/apps/player/dist/index.js
 Restart=on-failure
@@ -119,29 +118,31 @@ systemctl --user daemon-reload
 systemctl --user enable --now music-player
 ```
 
-**Windows:** buat shortcut → `Target: pnpm start` di folder `shell:startup`,
-atau pakai Task Scheduler / PM2.
+**Windows:** create a shortcut → `Target: pnpm start` in the `shell:startup`
+folder, or use Task Scheduler / PM2.
 
-**Android Termux:** jalankan manual (keputusan: tanpa auto-start) —
-`termux-wake-lock` sebelum start supaya tidak di-suspend.
+**Android Termux:** run manually (no auto-start) — run `termux-wake-lock`
+before starting so the process is not suspended.
 
 ## 6. Troubleshooting
 
-| Gejala | Solusi |
+| Symptom | Fix |
 |---|---|
-| `mpv: command not found` | Install mpv (bagian 1) atau set `PATH` |
-| `No credentials found` | Jalankan sekali dengan `PAIRING_CODE` (bagian 3) |
-| `INVALID_OR_EXPIRED_CODE` | Code 1× pakai & TTL 5 menit → buat code baru |
-| WS error / tidak connect | Cek `MUSIC_SERVER_URL` (harus `wss://.../ws/player`), test `curl https://music.example.com/healthz` |
-| Suara tidak keluar | Cek volume mpv (`set_property volume`), audio sink Termux/Windows |
-| Lagu tidak bisa resolve | `yt-dlp https://music.youtube.com/watch?v=xxx` manual untuk cek |
-| Token hilang/rusak | Hapus `credentials.json` → pairing ulang |
-| Update versi | `git pull && pnpm install && pnpm --filter @music-connect/player build && restart` |
+| `mpv: command not found` | Install mpv (section 1) or set `MPV_BIN` / `PATH` |
+| `No credentials found` | Run once with `PAIRING_CODE` (section 3) |
+| `INVALID_OR_EXPIRED_CODE` | Codes are single-use with a 5-min TTL → generate a new one |
+| WS error / won't connect | Check `MUSIC_SERVER_URL` (must be `wss://.../ws/player`); test `curl https://YOUR_SERVER/healthz` |
+| `mpv not connected` | mpv not started / IPC failed — check `MPV_BIN`, `MPV_IPC`, and `[mpv]` stderr logs |
+| No sound | Check mpv volume, Termux/Windows audio sink |
+| Track won't resolve | `yt-dlp https://music.youtube.com/watch?v=xxx` manually to verify |
+| Lost/corrupt token | Delete `credentials.json` → pair again |
+| Update | `git pull && pnpm install && pnpm --filter @music-connect/player build && restart` |
 
-## 7. Fitur yang otomatis
+## 7. Automatic behavior
 
-- ✅ Reconnect eksponensial (1s → 2s → 4s → maks) kalau WS putus
-- ✅ Heartbeat 5s → device tampil 🟢 di web UI
-- ✅ Report posisi 2s saat playing (server → semua controller sinkron)
-- ✅ Auto-next: lagu selesai → server pilih berikutnya (queue/rekomendasi)
-- ✅ Handoff: pindahkan playback ke device ini tanpa restart lagu
+- ✅ Exponential reconnect (1s → 2s → 4s → max) if the WS drops
+- ✅ 5s heartbeat → device shows 🟢 in the web UI
+- ✅ 2s position reports while playing (server → all controllers stay in sync)
+- ✅ Auto-next: track ends → server picks the next (queue/recommendations)
+- ✅ Handoff: move playback to this device without restarting the track
+- ✅ Never crashes on mpv errors (all command errors are logged only)

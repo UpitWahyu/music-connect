@@ -3,7 +3,6 @@ import { onMounted, onUnmounted, ref } from "vue";
 import { Music, Search as SearchIcon, FolderOpen, Heart, History as HistoryIcon, LogOut } from "lucide-vue-next";
 import { store, refreshDevices, startPolling, stopPolling, logout } from "./composables/useMusic";
 import Login from "./components/Login.vue";
-import DeviceSelector from "./components/DeviceSelector.vue";
 import Search from "./components/Search.vue";
 import PlaylistPlay from "./components/PlaylistPlay.vue";
 import Player from "./components/Player.vue";
@@ -34,7 +33,7 @@ onUnmounted(stopPolling);
 <template>
   <Login v-if="!store.authed" />
 
-  <div v-else class="mx-auto min-h-screen max-w-md px-4 pb-44 pt-6">
+  <div v-else class="mx-auto min-h-screen max-w-md px-4 pb-36 pt-6">
     <header class="mb-5 flex items-center justify-between">
       <div class="flex items-center gap-2.5">
         <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-green-500 text-black shadow-lg shadow-green-500/20">
@@ -75,21 +74,6 @@ onUnmounted(stopPolling);
     <p v-else class="mt-24 text-center text-sm text-neutral-500">
       Pilih device untuk mulai mendengarkan
     </p>
-  </div>
-
-  <!-- device selection bar (bottom, above the player bar) -->
-  <div
-    v-if="store.selectedDevice"
-    class="fixed inset-x-0 bottom-[4.25rem] z-40 border-t border-white/5 bg-[#101019]/95 backdrop-blur"
-  >
-    <div class="mx-auto flex max-w-md items-center justify-between gap-3 px-4 py-2">
-      <span class="text-xs font-medium uppercase tracking-wider text-neutral-500">
-        Memutar di
-      </span>
-      <div class="w-52">
-        <DeviceSelector />
-      </div>
-    </div>
   </div>
 
   <!-- player bar: flat, stuck to the bottom (Spotify style) -->

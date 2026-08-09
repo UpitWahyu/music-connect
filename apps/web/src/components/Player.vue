@@ -12,6 +12,7 @@ import {
 import { api } from "../lib/api";
 import { store, refreshState, refreshDevices } from "../composables/useMusic";
 import { formatDuration } from "../lib/format";
+import DeviceSelector from "./DeviceSelector.vue";
 
 const pb = computed(() => store.playback);
 const isPlaying = computed(() => pb.value?.state === "playing");
@@ -156,9 +157,18 @@ async function saveMac(): Promise<void> {
       </button>
     </div>
 
-    <!-- detail panel (volume mobile, handoff, wake) -->
+    <!-- detail panel (device, volume mobile, wake) -->
     <div v-if="showDetail" class="border-t border-white/5 bg-[#14141c]">
       <div class="mx-auto max-w-md space-y-3 px-4 py-3 text-sm">
+        <div class="flex items-center justify-between gap-3">
+          <span class="shrink-0 text-xs font-medium uppercase tracking-wider text-neutral-500">
+            Memutar di
+          </span>
+          <div class="w-48">
+            <DeviceSelector />
+          </div>
+        </div>
+
         <div class="flex items-center gap-2 sm:hidden">
           <Volume2 :size="16" class="shrink-0 text-neutral-500" />
           <input

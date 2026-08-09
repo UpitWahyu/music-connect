@@ -104,6 +104,15 @@ export const api = {
     request<{ playlist: { title: string; tracks: TrackDTO[] } | null }>("/music/playlists/" + encodeURIComponent(id)),
 
   queue: (deviceId: string) => request<{ queue: QueueItemDTO[] }>(`/devices/${deviceId}/queue`),
+  clearQueue: (deviceId: string) =>
+    request<{ queue: QueueItemDTO[] }>(`/devices/${deviceId}/queue/clear`, { method: "POST", body: "{}" }),
+  reorderQueue: (deviceId: string, order: string[]) =>
+    request<{ queue: QueueItemDTO[] }>(`/devices/${deviceId}/queue/reorder`, {
+      method: "PUT",
+      body: JSON.stringify({ order }),
+    }),
+  playQueueItem: (deviceId: string, itemId: string) =>
+    request<{ ok: boolean }>(`/devices/${deviceId}/queue/${itemId}/play`, { method: "POST", body: "{}" }),
   addToQueue: (deviceId: string, track: TrackDTO, playNext?: boolean) =>
     request<{ queue: QueueItemDTO[] }>(`/devices/${deviceId}/queue`, {
       method: "POST",
@@ -152,4 +161,5 @@ export const api = {
   removeFavorite: (trackId: string) => request(`/favorites/${trackId}`, { method: "DELETE" }),
 
   history: () => request<{ history: HistoryDTO[] }>("/history"),
+  clearHistory: () => request<{ ok: boolean }>("/history", { method: "DELETE" }),
 };

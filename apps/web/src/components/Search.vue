@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { Search as SearchIcon, Play, Plus, Heart, FolderPlus } from "lucide-vue-next";
+import { Search as SearchIcon, Play, Plus, Heart, FolderPlus, X } from "lucide-vue-next";
 import { api, type TrackDTO } from "../lib/api";
 import { store, refreshQueue, refreshState, refreshPlaylists } from "../composables/useMusic";
 import { formatDuration } from "../lib/format";
@@ -18,6 +18,13 @@ async function doSearch(): Promise<void> {
   } finally {
     busy.value = false;
   }
+}
+
+/** Reset search: clear the input and any results. */
+function resetSearch(): void {
+  query.value = "";
+  results.value = [];
+  saveFor.value = null;
 }
 
 async function playNow(track: TrackDTO): Promise<void> {
@@ -53,8 +60,16 @@ async function saveToPlaylist(playlistId: string): Promise<void> {
           v-model="query"
           type="search"
           placeholder="Cari lagu atau artis…"
-          class="w-full rounded-xl border border-white/5 bg-[#14141c] py-2.5 pl-9 pr-3 text-sm outline-none placeholder:text-neutral-600 focus:border-green-500/40"
+          class="w-full rounded-xl border border-white/5 bg-[#14141c] py-2.5 pl-9 pr-9 text-sm outline-none placeholder:text-neutral-600 focus:border-green-500/40"
         />
+        <button
+          v-if="query || results.length"
+          class="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-neutral-500 transition hover:bg-white/10 hover:text-white"
+          title="Reset pencarian"
+          @click="resetSearch"
+        >
+          <X :size="14" />
+        </button>
       </div>
       <button
         type="submit"

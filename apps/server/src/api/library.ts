@@ -94,4 +94,9 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
   app.get("/api/history", async (req) => ({
     history: await historyService.list(userIdOf(req)),
   }));
+
+  app.delete("/api/history", async (req) => {
+    await historyService.clear(userIdOf(req));
+    return { ok: true };
+  });
 }

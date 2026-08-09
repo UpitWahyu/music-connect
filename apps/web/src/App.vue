@@ -34,7 +34,7 @@ onUnmounted(stopPolling);
 <template>
   <Login v-if="!store.authed" />
 
-  <div v-else class="mx-auto min-h-screen max-w-md px-4 pb-10 pt-6">
+  <div v-else class="mx-auto min-h-screen max-w-md px-4 pb-36 pt-6">
     <header class="mb-5 flex items-center justify-between">
       <div class="flex items-center gap-2.5">
         <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-green-500 text-black shadow-lg shadow-green-500/20">
@@ -73,11 +73,13 @@ onUnmounted(stopPolling);
       <Playlists v-if="tab === 'playlists'" />
       <Favorites v-if="tab === 'favorites'" />
       <History v-if="tab === 'history'" />
-      <Player />
-      <Queue />
+      <Queue v-if="tab !== 'history'" />
     </div>
     <p v-else class="mt-24 text-center text-sm text-neutral-500">
       Pilih device untuk mulai mendengarkan
     </p>
   </div>
+
+  <!-- player bar: flat, stuck to the bottom (Spotify style) -->
+  <Player />
 </template>

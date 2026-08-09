@@ -60,6 +60,20 @@ export class QueueService {
     }
   }
 
+  /** Reorder the queue by a client-supplied list of item ids (must cover all items). */
+  async reorder(deviceId: string, order: string[]): Promise<QueueItem[]> {
+    const queue = await this.get(deviceId);
+    if (order.length !== queue.length) throw new Error("ORDER_MISMATCH");
+    const byId = new Map(queue.map((i) => [i.id, i]));
+    const reordered: QueueItem[] = [];
+    for (const id of order) {
+      const item = byId.get(id);
+      if (!item) throw new Error("ORDER_INVALID");
+      reordered.push(item);
+    }
+    return this.set(deviceId, reordered);
+  }
+
   // --- current position (server-authoritative, D-08) ---
 
   async getIndex(deviceId: string): Promise<number> {

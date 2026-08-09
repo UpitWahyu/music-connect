@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { Clock, Play } from "lucide-vue-next";
+import { Clock, Play, Trash2 } from "lucide-vue-next";
 import { api, type HistoryDTO } from "../lib/api";
 import { store, refreshState } from "../composables/useMusic";
 
@@ -22,15 +22,31 @@ async function playTrack(trackId: string, title: string, artist: string): Promis
   await refreshState();
 }
 
+async function clearAll(): Promise<void> {
+  await api.clearHistory();
+  await load();
+}
+
 onMounted(load);
 </script>
 
 <template>
   <section class="rounded-2xl border border-white/5 bg-[#14141c] p-4">
-    <h2 class="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">
-      <Clock :size="14" />
-      Riwayat Putar
-    </h2>
+    <div class="mb-2 flex items-center justify-between">
+      <h2 class="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+        <Clock :size="14" />
+        Riwayat Putar
+      </h2>
+      <button
+        v-if="history.length"
+        class="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-neutral-500 transition hover:bg-white/10 hover:text-red-400"
+        title="Hapus semua riwayat"
+        @click="clearAll"
+      >
+        <Trash2 :size="12" />
+        Hapus semua
+      </button>
+    </div>
     <ul v-if="history.length" class="divide-y divide-white/5">
       <li v-for="h in history" :key="h.id" class="flex items-center gap-3 py-2 text-sm">
         <div class="min-w-0 flex-1">

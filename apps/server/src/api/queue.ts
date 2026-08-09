@@ -29,7 +29,21 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
     return { queue: await queueService.remove(id, itemId) };
   });
 
-  /** Play an existing queue item now. TODO Phase 6: resolve media ref. */
+  /** Reorder queue by item ids (client-side sort commits the new order). */
+  app.put("/api/devices/:id/queue/reorder", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = (req.body ?? {}) as { order?: string[] };
+    if (!Array.isArray(body.order) || body.order.length === 0) {
+      return reply.code(400).send({ error: "MISSING_ORDER" });
+    }
+    try {
+      return { queue: await queueService.reorder(id, body.order) };
+    } catch (e) {
+      return reply.code(400).send({ error: (e as Error).message });
+    }
+  });
+
+  /** Play an existing queue item now. */
   app.post("/api/devices/:id/queue/:itemId/play", async (req, reply) => {
     const { id, itemId } = req.params as { id: string; itemId: string };
     const queue = await queueService.get(id);

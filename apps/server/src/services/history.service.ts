@@ -9,6 +9,11 @@ export class HistoryService {
       take: limit,
     });
   }
+
+  /** Clear the user's whole playback history. */
+  async clear(userId: string): Promise<void> {
+    await prisma.playbackHistory.deleteMany({ where: { userId } });
+  }
 }
 
 export const historyService = new HistoryService();

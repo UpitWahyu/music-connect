@@ -32,6 +32,8 @@ export class Mpv extends EventEmitter {
 
   constructor(private readonly socketPath: string) {
     super();
+    // many commands may wait on the IPC socket at once (slow device boot)
+    this.setMaxListeners(50);
   }
 
   start(): void {
@@ -66,11 +68,13 @@ export class Mpv extends EventEmitter {
       void this.observeProperties().catch(() => {
         // property observation is best-effort — never crash on it
       });
+      console.log("[player] mpv IPC connected");
       this.emit("connected");
     });
     sock.on("error", () => {
-      // mpv may take a moment to create the IPC socket — keep retrying
-      if (attempt < 40) setTimeout(() => this.connectWithRetry(attempt + 1), 500);
+      // mpv may take a while to create the IPC socket (slow devices like
+      // Termux) — keep retrying forever; the socket can appear any time
+      setTimeout(() => this.connectWithRetry(attempt + 1), 1000);
     });
   }
 
@@ -137,7 +141,7 @@ export class Mpv extends EventEmitter {
   }
 
   /** Resolve once the mpv IPC socket is ready (mpv may take a moment to boot). */
-  private waitConnected(timeoutMs = 15000): Promise<void> {
+  private waitConnected(timeoutMs = 30000): Promise<void> {
     if (this.sock) return Promise.resolve();
     return new Promise((resolve, reject) => {
       const onConnected = (): void => {

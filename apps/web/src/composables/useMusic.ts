@@ -17,6 +17,12 @@ export async function login(username: string, password: string): Promise<void> {
   setToken(token);
   store.authed = true;
   await refreshDevices();
+  // restore the account-wide selected device (cross-browser sync)
+  const sel = await api.getSelectedDevice().catch(() => null);
+  if (sel?.deviceId && store.devices.some((d) => d.id === sel.deviceId)) {
+    store.selectedDevice = sel.deviceId;
+    await refreshAll();
+  }
   await refreshPlaylists();
   startRealtime();
   startPolling();
@@ -73,6 +79,8 @@ export async function selectDeviceAuto(id: string): Promise<void> {
     }
   }
   await selectDevice(id);
+  // sync the choice to the account so every browser follows (cross-device)
+  void api.setSelectedDevice(id).catch(() => null);
 }
 
 export async function refreshQueue(): Promise<void> {
@@ -117,6 +125,13 @@ export function startRealtime(): void {
       void refreshQueue();
     } else if (event.type === "player.state" && event.deviceId === store.selectedDevice) {
       void refreshState();
+    } else if (event.type === "device.selected") {
+      // another browser/tab changed the device — follow it
+      const id = event.deviceId;
+      if (id && id !== store.selectedDevice && store.devices.some((d) => d.id === id)) {
+        store.selectedDevice = id;
+        void refreshAll();
+      }
     }
   });
 }

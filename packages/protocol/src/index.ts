@@ -57,6 +57,7 @@ export type ClientEvent =
 export type ServerEvent =
   | { type: "player.state"; deviceId: string; state: unknown }
   | { type: "device.updated"; device: unknown }
+  | { type: "device.selected"; deviceId: string }
   | { type: "queue.updated"; deviceId: string; queue: QueueItem[] }
   | { type: "error"; code: string; message: string };
 

@@ -1,9 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import type { Track } from "@music-connect/types";
+import { RedisKeys } from "@music-connect/shared";
 import { playlistService } from "../services/playlist.service.js";
 import { favoriteService } from "../services/favorite.service.js";
 import { historyService } from "../services/history.service.js";
 import { playbackService } from "../services/playback.service.js";
+import { redis } from "../redis/client.js";
+import { broadcastToControllers } from "../ws/registry.js";
 
 /** User id from the verified JWT (auth guard in index.ts runs first). */
 function userIdOf(req: { user?: unknown }): string {
@@ -97,6 +100,20 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete("/api/history", async (req) => {
     await historyService.clear(userIdOf(req));
+    return { ok: true };
+  });
+
+  // ---------- Selected device (cross-browser / cross-device sync) ----------
+  app.get("/api/selected-device", async (req) => {
+    const deviceId = await redis.get(RedisKeys.userSelectedDevice(userIdOf(req)));
+    return { deviceId };
+  });
+
+  app.put("/api/selected-device", async (req, reply) => {
+    const body = (req.body ?? {}) as { deviceId?: string };
+    if (!body.deviceId) return reply.code(400).send({ error: "MISSING_DEVICE_ID" });
+    await redis.set(RedisKeys.userSelectedDevice(userIdOf(req)), body.deviceId);
+    broadcastToControllers({ type: "device.selected", deviceId: body.deviceId });
     return { ok: true };
   });
 }

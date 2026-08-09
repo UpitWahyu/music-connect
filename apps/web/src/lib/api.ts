@@ -162,4 +162,7 @@ export const api = {
 
   history: () => request<{ history: HistoryDTO[] }>("/history"),
   clearHistory: () => request<{ ok: boolean }>("/history", { method: "DELETE" }),
+  getSelectedDevice: () => request<{ deviceId: string | null }>("/selected-device"),
+  setSelectedDevice: (deviceId: string) =>
+    request<{ ok: boolean }>("/selected-device", { method: "PUT", body: JSON.stringify({ deviceId }) }),
 };

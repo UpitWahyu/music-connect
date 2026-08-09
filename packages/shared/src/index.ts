@@ -12,6 +12,7 @@ export const RedisKeys = {
   deviceState: (deviceId: string): string => `music:device:${deviceId}:state`,
   userQueue: (userId: string): string => `music:queue:${userId}`,
   userQueueIndex: (userId: string): string => `music:queue:${userId}:index`,
+  userSelectedDevice: (userId: string): string => `music:user:${userId}:selected-device`,
   deviceMeta: (deviceId: string): string => `music:device:${deviceId}:meta`,
   devicesOnline: (): string => "music:devices:online",
   pairingCode: (code: string): string => `music:pairing:${code}`,

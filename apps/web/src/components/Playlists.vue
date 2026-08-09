@@ -1,9 +1,15 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 import { FolderOpen, Play, Trash2, X } from "lucide-vue-next";
 import { api, type PlaylistTrackDTO } from "../lib/api";
 import { store, refreshPlaylists, refreshQueue, refreshState } from "../composables/useMusic";
 import { formatDuration } from "../lib/format";
+
+// refresh whenever the tab is opened — the login-time fetch may not have
+// finished (or the user may have logged in before playlists were loaded)
+onMounted(() => {
+  void refreshPlaylists();
+});
 
 const name = ref("");
 const busy = ref(false);

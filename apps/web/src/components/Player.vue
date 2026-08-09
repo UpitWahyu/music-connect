@@ -8,9 +8,12 @@ import {
   Volume2,
   Power,
   MoreHorizontal,
+  Heart,
+  FolderPlus,
 } from "lucide-vue-next";
 import { api } from "../lib/api";
-import { store, refreshState, refreshDevices } from "../composables/useMusic";
+import { store, refreshState, refreshDevices, refreshFavorites, refreshPlaylists } from "../composables/useMusic";
+import { showToast } from "../composables/useToast";
 import { formatDuration } from "../lib/format";
 import DeviceSelector from "./DeviceSelector.vue";
 
@@ -69,10 +72,57 @@ async function wake(): Promise<void> {
   if (!store.selectedDevice) return;
   try {
     await api.wake(store.selectedDevice);
-    wakeMsg.value = "Magic packet terkirim — PC menyala dalam beberapa detik";
+    showToast("Wake signal terkirim");
   } catch (e) {
-    wakeMsg.value = `Gagal: ${(e as Error).message}`;
+    showToast(`Gagal: ${(e as Error).message}`, "error");
   }
+}
+
+// --- favorite & playlist for the CURRENT track ---
+const isFav = computed(() => {
+  const t = track.value;
+  return !!t && store.favorites.some((f) => f.trackId === t.id);
+});
+
+async function toggleFav(): Promise<void> {
+  const t = track.value;
+  if (!t) return;
+  if (isFav.value) {
+    await api.removeFavorite(t.id).catch(() => null);
+    showToast("Dihapus dari favorit");
+  } else {
+    await api.addFavorite(t).catch(() => null);
+    showToast("Ditambahkan ke favorit");
+  }
+  await refreshFavorites();
+}
+
+const showSavePanel = ref(false);
+const containsMap = ref<Record<string, boolean>>({});
+
+async function toggleSavePanel(): Promise<void> {
+  showSavePanel.value = !showSavePanel.value;
+  if (showSavePanel.value && track.value) {
+    await refreshPlaylists();
+    const r = await api.playlistsWithTrack(track.value.id).catch(() => null);
+    containsMap.value = Object.fromEntries((r?.playlists ?? []).map((p) => [p.id, p.contains]));
+  }
+}
+
+async function togglePlaylist(playlistId: string): Promise<void> {
+  const t = track.value;
+  if (!t) return;
+  const wasIn = containsMap.value[playlistId];
+  const plName = store.playlists.find((p) => p.id === playlistId)?.name ?? "playlist";
+  if (wasIn) {
+    await api.removeFromPlaylist(playlistId, t.id).catch(() => null);
+  } else {
+    await api.addToPlaylist(playlistId, t).catch(() => null);
+  }
+  containsMap.value = { ...containsMap.value, [playlistId]: !wasIn };
+  await refreshPlaylists();
+  showToast(wasIn ? `Dihapus dari ${plName}` : `Ditambahkan ke ${plName}`);
+}
 }
 
 async function saveMac(): Promise<void> {
@@ -166,6 +216,52 @@ async function saveMac(): Promise<void> {
           </span>
           <div class="w-48">
             <DeviceSelector />
+          </div>
+        </div>
+
+        <!-- save current track: favorite / playlist -->
+        <div v-if="track" class="relative border-t border-white/5 pt-3">
+          <div class="flex items-center justify-between gap-3">
+            <span class="shrink-0 text-xs font-medium uppercase tracking-wider text-neutral-500">
+              Simpan lagu
+            </span>
+            <div class="flex items-center gap-1">
+              <button
+                class="rounded-lg p-2 transition"
+                :class="isFav ? 'text-red-500' : 'text-neutral-400 hover:bg-white/10 hover:text-red-400'"
+                :title="isFav ? 'Hapus dari favorit' : 'Tambah ke favorit'"
+                @click="toggleFav"
+              >
+                <Heart :size="15" :fill="isFav ? 'currentColor' : 'none'" />
+              </button>
+              <button
+                class="rounded-lg p-2 text-neutral-400 transition hover:bg-white/10 hover:text-white"
+                :title="showSavePanel ? 'Tutup' : 'Simpan ke playlist'"
+                @click="toggleSavePanel"
+              >
+                <FolderPlus :size="15" />
+              </button>
+            </div>
+          </div>
+
+          <!-- playlist picker (toggles, opens upward) -->
+          <div
+            v-if="showSavePanel"
+            class="absolute bottom-full right-0 z-10 mb-1 w-56 rounded-xl border border-white/10 bg-[#1c1c26] p-2 shadow-2xl shadow-black/60"
+          >
+            <div v-if="store.playlists.length" class="flex max-h-44 flex-wrap gap-1 overflow-y-auto">
+              <button
+                v-for="p in store.playlists"
+                :key="p.id"
+                class="rounded-lg px-2.5 py-1.5 text-xs font-medium transition"
+                :class="containsMap[p.id] ? 'bg-green-500 text-black' : 'bg-white/10 hover:bg-green-500 hover:text-black'"
+                :title="containsMap[p.id] ? 'Hapus dari playlist' : 'Tambah ke playlist'"
+                @click="togglePlaylist(p.id)"
+              >
+                {{ p.name }}{{ containsMap[p.id] ? " ✓" : "" }}
+              </button>
+            </div>
+            <p v-else class="text-xs text-neutral-500">Belum ada playlist — buat di tab Playlist</p>
           </div>
         </div>
 

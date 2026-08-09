@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { ListMusic, Music2, Play, Sparkles, Heart, FolderPlus } from "lucide-vue-next";
+import { ListMusic, Music2, Play, Sparkles, Heart, FolderPlus, ChevronUp, ChevronDown } from "lucide-vue-next";
 import { api, type QueueItemDTO } from "../lib/api";
 import { store, refreshQueue, refreshState, refreshPlaylists, refreshFavorites } from "../composables/useMusic";
 import { formatDuration } from "../lib/format";
@@ -46,6 +46,24 @@ async function onDrop(itemId: string, e: DragEvent): Promise<void> {
     await api.reorderQueue(store.selectedDevice, arr.map((x) => x.id));
   } catch {
     // server rejected — refetch authoritative order
+  }
+  void refreshQueue();
+}
+
+// --- move ▲▼ (mobile-friendly reorder, same commit path as drag) ---
+async function moveItem(itemId: string, dir: -1 | 1): Promise<void> {
+  if (!store.selectedDevice) return;
+  const arr = [...store.queue];
+  const i = arr.findIndex((x) => x.id === itemId);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= arr.length) return;
+  const [moved] = arr.splice(i, 1);
+  arr.splice(j, 0, moved);
+  store.queue = arr;
+  try {
+    await api.reorderQueue(store.selectedDevice, arr.map((x) => x.id));
+  } catch {
+    // server rejected — refetch
   }
   void refreshQueue();
 }
@@ -120,6 +138,24 @@ async function togglePlaylist(playlistId: string): Promise<void> {
         @dragend="onDragEnd"
         @drop="onDrop(item.id)"
       >
+        <!-- move handle (mobile-friendly reorder) -->
+        <div class="flex shrink-0 flex-col">
+          <button
+            class="rounded p-0.5 text-neutral-600 transition hover:bg-white/10 hover:text-white disabled:opacity-30"
+            :disabled="i === 0"
+            @click="moveItem(item.id, -1)"
+          >
+            <ChevronUp :size="12" />
+          </button>
+          <button
+            class="rounded p-0.5 text-neutral-600 transition hover:bg-white/10 hover:text-white disabled:opacity-30"
+            :disabled="i === store.queue.length - 1"
+            @click="moveItem(item.id, 1)"
+          >
+            <ChevronDown :size="12" />
+          </button>
+        </div>
+
         <button
           class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition"
           :class="i === playingIndex ? 'bg-green-500 text-black' : 'bg-white/10 text-neutral-300 hover:bg-green-500 hover:text-black'"

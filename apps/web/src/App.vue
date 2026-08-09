@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from "vue";
+import { Music, Search as SearchIcon, FolderOpen, Heart, History as HistoryIcon, LogOut } from "lucide-vue-next";
 import { store, refreshDevices, startPolling, stopPolling, logout } from "./composables/useMusic";
 import Login from "./components/Login.vue";
 import DeviceSelector from "./components/DeviceSelector.vue";
@@ -14,11 +15,11 @@ import History from "./components/History.vue";
 type Tab = "search" | "playlists" | "favorites" | "history";
 const tab = ref<Tab>("search");
 
-const tabs: Array<{ id: Tab; label: string }> = [
-  { id: "search", label: "🔎 Cari" },
-  { id: "playlists", label: "📂 Playlist" },
-  { id: "favorites", label: "❤️ Fav" },
-  { id: "history", label: "🕘 Riwayat" },
+const tabs: Array<{ id: Tab; label: string; icon: typeof SearchIcon }> = [
+  { id: "search", label: "Cari", icon: SearchIcon },
+  { id: "playlists", label: "Playlist", icon: FolderOpen },
+  { id: "favorites", label: "Favorit", icon: Heart },
+  { id: "history", label: "Riwayat", icon: HistoryIcon },
 ];
 
 onMounted(() => {
@@ -33,24 +34,36 @@ onUnmounted(stopPolling);
 <template>
   <Login v-if="!store.authed" />
 
-  <div v-else class="mx-auto max-w-md px-4 py-6">
-    <header class="mb-4 flex items-center justify-between">
-      <h1 class="text-xl font-bold">🎵 Music Connect</h1>
-      <div class="flex items-center gap-3">
+  <div v-else class="mx-auto min-h-screen max-w-md px-4 pb-10 pt-6">
+    <header class="mb-5 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-green-500 text-black shadow-lg shadow-green-500/20">
+          <Music :size="19" />
+        </div>
+        <h1 class="text-lg font-bold tracking-tight">Music Connect</h1>
+      </div>
+      <div class="flex items-center gap-2">
         <DeviceSelector />
-        <button class="text-xs text-gray-400 hover:text-white" @click="logout">Logout</button>
+        <button
+          class="rounded-lg p-2 text-neutral-400 transition hover:bg-white/5 hover:text-white"
+          title="Logout"
+          @click="logout"
+        >
+          <LogOut :size="16" />
+        </button>
       </div>
     </header>
 
-    <nav v-if="store.selectedDevice" class="mb-4 flex gap-1 rounded-xl bg-gray-800 p-1 text-sm">
+    <nav v-if="store.selectedDevice" class="mb-4 flex gap-1 rounded-xl bg-[#14141c] p-1">
       <button
         v-for="t in tabs"
         :key="t.id"
-        class="flex-1 rounded-lg px-2 py-1.5"
-        :class="tab === t.id ? 'bg-gray-600 font-semibold' : 'text-gray-400 hover:text-white'"
+        class="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-2 transition"
+        :class="tab === t.id ? 'bg-white/10 font-semibold text-white' : 'text-neutral-400 hover:text-white'"
         @click="tab = t.id"
       >
-        {{ t.label }}
+        <component :is="t.icon" :size="15" />
+        <span class="hidden sm:inline">{{ t.label }}</span>
       </button>
     </nav>
 
@@ -63,8 +76,8 @@ onUnmounted(stopPolling);
       <Player />
       <Queue />
     </div>
-    <p v-else class="mt-16 text-center text-sm text-gray-400">
-      Select a device to start listening
+    <p v-else class="mt-24 text-center text-sm text-neutral-500">
+      Pilih device untuk mulai mendengarkan
     </p>
   </div>
 </template>

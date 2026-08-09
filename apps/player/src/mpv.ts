@@ -208,12 +208,24 @@ export class Mpv extends EventEmitter {
   }
 
   async load(url: string, position?: number): Promise<void> {
-    // position rides along with loadfile (start=+N) — atomic, no seek race
-    const opts = position && position > 0 ? [`start=+${Math.floor(position)}`] : [];
+    // position rides along with loadfile (start=N, absolute) — atomic, no seek
+    // race; falls back to plain load + seek when options are rejected
+    const pos = position && position > 0 ? Math.floor(position) : 0;
     let lastErr: unknown;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        await this.command(["loadfile", url, "replace", ...opts]);
+        if (pos > 0) {
+          try {
+            await this.command(["loadfile", url, "replace", `start=${pos}`]);
+          } catch {
+            // older/Android mpv may reject loadfile options — load + seek instead
+            await this.command(["loadfile", url, "replace"]);
+            await this.waitForPlayback();
+            await this.command(["seek", pos, "absolute"]).catch(() => null);
+          }
+        } else {
+          await this.command(["loadfile", url, "replace"]);
+        }
         lastErr = undefined;
         break;
       } catch (e) {
@@ -223,6 +235,16 @@ export class Mpv extends EventEmitter {
     }
     if (lastErr) throw lastErr as Error;
     this.state.idle = false;
+  }
+
+  /** Resolve once playback actually started (time-pos > 0) — demuxer is ready. */
+  private async waitForPlayback(timeoutMs = 15000): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const p = await this.command(["get_property", "time-pos"]).catch(() => null);
+      if (typeof p === "number" && p > 0) return;
+      await new Promise((r) => setTimeout(r, 200));
+    }
   }
 
   async play(): Promise<void> {

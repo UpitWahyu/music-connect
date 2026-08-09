@@ -18,7 +18,7 @@ const linkError = ref("");
 
 function parseListId(url: string): string | null {
   const m = url.match(/[?&]list=([A-Za-z0-9_-]{10,})/);
-  return m ? m[1] : null;
+  return m?.[1] ?? null;
 }
 
 async function playLink(): Promise<void> {

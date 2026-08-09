@@ -112,10 +112,16 @@ async function saveMac(): Promise<void> {
       <button class="flex min-w-0 flex-1 items-center gap-2 text-left" @click="showDetail = !showDetail">
         <div class="min-w-0 flex-1">
           <div class="truncate text-sm font-semibold">
-            {{ track?.title ?? "Tidak ada yang diputar" }}
+            {{ track?.title ?? (thisDevice && !thisDevice.online ? "Device offline" : "Tidak ada yang diputar") }}
           </div>
-          <div class="truncate text-xs text-neutral-500">
-            {{ track?.artist ?? "—" }} · {{ formatDuration(track?.duration ?? 0) }}
+          <div class="truncate text-xs" :class="thisDevice && !thisDevice.online && !track ? 'text-amber-500/80' : 'text-neutral-500'">
+            {{
+              track?.artist
+                ? `${track.artist} · ${formatDuration(track.duration ?? 0)}`
+                : thisDevice && !thisDevice.online
+                  ? "Musik tidak diputar di device ini"
+                  : "Pilih tab Cari untuk mulai"
+            }}
           </div>
         </div>
       </button>

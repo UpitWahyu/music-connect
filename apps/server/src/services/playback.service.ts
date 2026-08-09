@@ -2,6 +2,7 @@ import type { MediaRef, PlayerStateReport } from "@music-connect/protocol";
 import type { PlaybackState, QueueItem, Track } from "@music-connect/types";
 import { RedisKeys } from "@music-connect/shared";
 import { redis } from "../redis/client.js";
+import { prisma } from "../db/prisma.js";
 import { sendToPlayer } from "../ws/registry.js";
 import { deviceService } from "./device.service.js";
 import { queueService } from "./queue.service.js";
@@ -120,9 +121,15 @@ export class PlaybackService {
   async playPlaylist(deviceId: string, playlistId: string): Promise<{ queued: number; first: Track | null }> {
     const playlist = await musicService.getPlaylist(playlistId);
     if (!playlist || playlist.tracks.length === 0) throw new Error("PLAYLIST_NOT_FOUND");
+    return this.playTracks(deviceId, playlist.tracks);
+  }
+
+  /** Replace the queue with the given tracks and start the first one. */
+  async playTracks(deviceId: string, tracks: Track[]): Promise<{ queued: number; first: Track | null }> {
+    if (tracks.length === 0) throw new Error("PLAYLIST_NOT_FOUND");
 
     await queueService.clear(deviceId);
-    for (const track of playlist.tracks) await queueService.add(deviceId, track);
+    for (const track of tracks) await queueService.add(deviceId, track);
     await queueService.setIndex(deviceId, 0);
 
     const first = await queueService.getCurrent(deviceId);
@@ -130,7 +137,7 @@ export class PlaybackService {
       await this.loadTrack(deviceId, first);
       await autoQueueService.ensure(deviceId, first.track.id);
     }
-    return { queued: playlist.tracks.length, first: first?.track ?? null };
+    return { queued: tracks.length, first: first?.track ?? null };
   }
 
   /**
@@ -181,6 +188,25 @@ export class PlaybackService {
       position: 0,
       queueIndex: await queueService.getIndex(deviceId),
     });
+
+    // Phase 8: record playback history (PRD §29) — device.userId set at pairing
+    const device = await prisma.device
+      .findUnique({ where: { id: deviceId }, select: { userId: true } })
+      .catch(() => null);
+    if (device?.userId) {
+      await prisma.playbackHistory
+        .create({
+          data: {
+            userId: device.userId,
+            deviceId,
+            trackId: item.track.id,
+            provider: item.track.provider,
+            title: item.track.title,
+            artist: item.track.artist,
+          },
+        })
+        .catch(() => null);
+    }
   }
 
   private async patchState(deviceId: string, patch: Partial<PlaybackState>): Promise<void> {

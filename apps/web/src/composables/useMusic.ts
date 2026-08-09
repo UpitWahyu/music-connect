@@ -1,5 +1,5 @@
 import { reactive } from "vue";
-import { api, getToken, setToken, type DeviceDTO, type PlaybackStateDTO, type QueueItemDTO } from "../lib/api";
+import { api, getToken, setToken, type DeviceDTO, type PlaybackStateDTO, type PlaylistDTO, type QueueItemDTO } from "../lib/api";
 import { connectControllerWs } from "../lib/ws";
 
 export const store = reactive({
@@ -8,6 +8,7 @@ export const store = reactive({
   selectedDevice: null as string | null,
   queue: [] as QueueItemDTO[],
   playback: null as PlaybackStateDTO | null,
+  playlists: [] as PlaylistDTO[],
 });
 
 export async function login(username: string, password: string): Promise<void> {
@@ -15,6 +16,7 @@ export async function login(username: string, password: string): Promise<void> {
   setToken(token);
   store.authed = true;
   await refreshDevices();
+  await refreshPlaylists();
   startRealtime();
   startPolling();
 }
@@ -28,10 +30,15 @@ export function logout(): void {
   store.devices = [];
   store.queue = [];
   store.playback = null;
+  store.playlists = [];
 }
 
 export async function refreshDevices(): Promise<void> {
   store.devices = await api.devices();
+}
+
+export async function refreshPlaylists(): Promise<void> {
+  store.playlists = (await api.playlists()).playlists;
 }
 
 export async function selectDevice(id: string): Promise<void> {

@@ -11,6 +11,7 @@ import { searchRoutes } from "./api/search.js";
 import { queueRoutes } from "./api/queue.js";
 import { playbackRoutes } from "./api/playback.js";
 import { registerWsGateway } from "./ws/gateway.js";
+import { libraryRoutes } from "./api/library.js";
 
 const app = Fastify({ logger: true });
 
@@ -31,12 +32,26 @@ await app.register(websocket);
 // Health endpoint (PRD §41 D-12) — for Tianji / uptime monitoring
 app.get("/healthz", async () => ({ status: "ok", uptime: process.uptime() }));
 
-// TODO Phase 2: protect all /api/* routes with app.jwtVerify()
+// Auth guard (PRD §30): all /api/* routes require a JWT except login and the
+// public player pairing flow. WebSocket has its own first-message auth (D-07).
+app.addHook("onRequest", async (req, reply) => {
+  const url = req.url.split("?")[0] ?? "";
+  if (url === "/api/auth/login" || url === "/api/player/pair" || url === "/healthz" || url.startsWith("/ws")) return;
+  if (url.startsWith("/api/")) {
+    try {
+      await req.jwtVerify();
+    } catch {
+      return reply.code(401).send({ error: "UNAUTHORIZED" });
+    }
+  }
+});
+
 await app.register(authRoutes);
 await app.register(deviceRoutes);
 await app.register(searchRoutes);
 await app.register(queueRoutes);
 await app.register(playbackRoutes);
+await app.register(libraryRoutes);
 await registerWsGateway(app);
 
 await connectRedis();

@@ -47,6 +47,38 @@ export interface DeviceDTO {
   type: string;
 }
 
+export interface PlaylistDTO {
+  id: string;
+  name: string;
+  _count: { tracks: number };
+  createdAt: string;
+}
+
+export interface PlaylistTrackDTO {
+  trackId: string;
+  provider: string;
+  title: string;
+  artist: string;
+  album?: string | null;
+  duration: number;
+  thumbnail?: string | null;
+}
+
+export interface FavoriteDTO {
+  trackId: string;
+  title: string;
+  artist: string;
+}
+
+export interface HistoryDTO {
+  id: string;
+  trackId: string;
+  title: string;
+  artist: string;
+  deviceId?: string | null;
+  playedAt: string;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {};
   if (token) headers.authorization = `Bearer ${token}`;
@@ -93,4 +125,22 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ playlistId }),
     }),
+
+  // --- Phase 8: persistent library ---
+  createPlaylist: (name: string) => request<{ playlist: { id: string; name: string } }>("/playlists", { method: "POST", body: JSON.stringify({ name }) }),
+  playlists: () => request<{ playlists: PlaylistDTO[] }>("/playlists"),
+  playlistDetail: (id: string) => request<{ playlist: { id: string; name: string; tracks: PlaylistTrackDTO[] } | null }>(`/playlists/${id}`),
+  deletePlaylist: (id: string) => request(`/playlists/${id}`, { method: "DELETE" }),
+  addToPlaylist: (playlistId: string, track: TrackDTO) =>
+    request<{ ok: boolean }>(`/playlists/${playlistId}/tracks`, { method: "POST", body: JSON.stringify({ track }) }),
+  removeFromPlaylist: (playlistId: string, trackId: string) =>
+    request(`/playlists/${playlistId}/tracks/${trackId}`, { method: "DELETE" }),
+  playLocalPlaylist: (playlistId: string, deviceId: string) =>
+    request<{ queued: number; first: TrackDTO | null }>(`/playlists/${playlistId}/play`, { method: "POST", body: JSON.stringify({ deviceId }) }),
+
+  favorites: () => request<{ favorites: FavoriteDTO[] }>("/favorites"),
+  addFavorite: (track: TrackDTO) => request<{ ok: boolean }>("/favorites", { method: "POST", body: JSON.stringify({ track }) }),
+  removeFavorite: (trackId: string) => request(`/favorites/${trackId}`, { method: "DELETE" }),
+
+  history: () => request<{ history: HistoryDTO[] }>("/history"),
 };

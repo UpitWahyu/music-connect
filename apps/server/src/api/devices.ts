@@ -27,9 +27,11 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   app.post("/api/devices/:id/pair", async (req, reply) => {
     const { id } = req.params as { id: string };
     const code = generatePairingCode();
-    // D-10: 5-minute TTL, one-time use
+    const user = req.user as { sub?: string } | undefined;
+    // D-10: 5-minute TTL, one-time use; remember who owns the device
     await redis.set(RedisKeys.pairingCode(code), id, "EX", 300);
     await redis.set(RedisKeys.pairingDevice(id), code, "EX", 300);
+    if (user?.sub) await redis.set(RedisKeys.pairingUser(code), user.sub, "EX", 300);
     return { pairingCode: code, expiresIn: 300, deviceId: id };
   });
 
@@ -43,13 +45,15 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     if (!deviceId) return reply.code(404).send({ error: "INVALID_OR_EXPIRED_CODE" });
 
     // one-time: consume immediately (D-10)
+    const ownerId = await redis.get(RedisKeys.pairingUser(code));
     await redis.del(RedisKeys.pairingCode(code), RedisKeys.pairingDevice(deviceId));
+    if (ownerId) await redis.del(RedisKeys.pairingUser(code));
 
     const token = randomBytes(32).toString("hex");
     const device = await prisma.device.upsert({
       where: { id: deviceId },
-      update: { tokenHash: sha256(token), name: body.name ?? deviceId, type: body.type ?? "unknown" },
-      create: { id: deviceId, name: body.name ?? deviceId, type: body.type ?? "unknown", tokenHash: sha256(token) },
+      update: { tokenHash: sha256(token), name: body.name ?? deviceId, type: body.type ?? "unknown", userId: ownerId ?? undefined },
+      create: { id: deviceId, name: body.name ?? deviceId, type: body.type ?? "unknown", tokenHash: sha256(token), userId: ownerId ?? undefined },
     });
     return { deviceId: device.id, token };
   });

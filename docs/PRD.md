@@ -1816,6 +1816,17 @@ target device uses its own stored volume (Spotify-like).
 - Vitest: unit tests for the Queue Manager (auto-next, shuffle, repeat,
   handoff) + one WebSocket integration test.
 
+## D-14 — Persistent library & auth guard (Phase 8)
+
+All `/api/*` routes require a JWT (global `onRequest` hook; exceptions:
+`/api/auth/login`, `/api/player/pair`, `/healthz`, and `/ws/*` which has its
+own first-message auth). Playlists, favorites and playback history persist in
+MySQL (§29): playlist rows store track snapshot metadata with stable provider
+ids (§15 — never temporary URLs). Playing a saved playlist replaces the queue
+with the same Spotify semantics as YT playlists. History is recorded on every
+track load; `device.userId` is captured at pairing time (stored with the
+pairing code in Redis, written to the Device row on submit).
+
 ## D-13 — Auto-queue recommendations (extends §24, §25)
 
 When the queue runs low (`remaining <= AUTO_QUEUE_THRESHOLD`, default 2) the

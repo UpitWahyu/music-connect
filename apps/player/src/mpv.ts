@@ -174,4 +174,10 @@ export class Mpv extends EventEmitter {
     const d = await this.command(["get_property", "time-pos"]);
     return typeof d === "number" ? d : this.state.position;
   }
+
+  /** Query duration directly — observe_property events aren't reliable on some platforms. */
+  async getDuration(): Promise<number> {
+    const d = await this.command(["get_property", "duration"]);
+    return typeof d === "number" ? d : this.state.duration;
+  }
 }

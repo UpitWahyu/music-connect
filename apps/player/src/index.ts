@@ -49,7 +49,7 @@ setInterval(() => {
 setInterval(async () => {
   if (state.status === "playing") {
     state.position = await mpv.getTimePos().catch(() => state.position);
-    state.duration = mpv.state.duration; // real duration (mpv knows it even for oEmbed tracks)
+    state.duration = await mpv.getDuration().catch(() => state.duration); // real duration (mpv knows it even for oEmbed tracks)
     conn.send({ type: "player.state", report: state.toReport(credentials.deviceId) });
   }
 }, config.stateReportMs);

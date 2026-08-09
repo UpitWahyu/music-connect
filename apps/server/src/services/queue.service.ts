@@ -2,20 +2,45 @@ import { randomUUID } from "node:crypto";
 import type { QueueItem, Track } from "@music-connect/types";
 import { RedisKeys } from "@music-connect/shared";
 import { redis } from "../redis/client.js";
+import { prisma } from "../db/prisma.js";
 
 /**
  * Server-controlled queue (PRD §24). Ephemeral — Redis only (PRD §41 D-05).
  * Items are identified by their stable item id, never by index (see §41).
  * The current position (queueIndex) is server-authoritative (D-08).
+ *
+ * The queue is **global per account**: every device of the same user shares
+ * one queue (Spotify-like). Devices paired without a user (test rigs) fall
+ * back to a per-device queue keyed by their id.
  */
 export class QueueService {
+  /** device → owning userId. Cached with a TTL — pairing may set userId AFTER
+   *  the first lookup (a null-user device becomes a real account device). */
+  private ownerCache = new Map<string, { owner: string; at: number }>();
+  private static OWNER_TTL_MS = 30_000;
+
+  private async ownerOf(deviceId: string): Promise<string> {
+    const cached = this.ownerCache.get(deviceId);
+    if (cached && Date.now() - cached.at < QueueService.OWNER_TTL_MS) return cached.owner;
+    const dev = await prisma.device.findUnique({ where: { id: deviceId }, select: { userId: true } });
+    const owner = dev?.userId ?? deviceId;
+    this.ownerCache.set(deviceId, { owner, at: Date.now() });
+    return owner;
+  }
+
+  private keyOf(owner: string, index = false): string {
+    return index ? RedisKeys.userQueueIndex(owner) : RedisKeys.userQueue(owner);
+  }
+
   async get(deviceId: string): Promise<QueueItem[]> {
-    const raw = await redis.get(RedisKeys.deviceQueue(deviceId));
+    const owner = await this.ownerOf(deviceId);
+    const raw = await redis.get(this.keyOf(owner));
     return raw ? (JSON.parse(raw) as QueueItem[]) : [];
   }
 
   async set(deviceId: string, items: QueueItem[]): Promise<QueueItem[]> {
-    await redis.set(RedisKeys.deviceQueue(deviceId), JSON.stringify(items));
+    const owner = await this.ownerOf(deviceId);
+    await redis.set(this.keyOf(owner), JSON.stringify(items));
     return items;
   }
 
@@ -77,12 +102,14 @@ export class QueueService {
   // --- current position (server-authoritative, D-08) ---
 
   async getIndex(deviceId: string): Promise<number> {
-    const raw = await redis.get(RedisKeys.deviceQueueIndex(deviceId));
+    const owner = await this.ownerOf(deviceId);
+    const raw = await redis.get(this.keyOf(owner, true));
     return raw ? Number(raw) : 0;
   }
 
   async setIndex(deviceId: string, index: number): Promise<void> {
-    await redis.set(RedisKeys.deviceQueueIndex(deviceId), String(index));
+    const owner = await this.ownerOf(deviceId);
+    await redis.set(this.keyOf(owner, true), String(index));
   }
 
   async getCurrent(deviceId: string): Promise<QueueItem | null> {

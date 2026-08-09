@@ -10,8 +10,8 @@ import type { PlaybackState } from "@music-connect/types";
  */
 export const RedisKeys = {
   deviceState: (deviceId: string): string => `music:device:${deviceId}:state`,
-  deviceQueue: (deviceId: string): string => `music:device:${deviceId}:queue`,
-  deviceQueueIndex: (deviceId: string): string => `music:device:${deviceId}:queue-index`,
+  userQueue: (userId: string): string => `music:queue:${userId}`,
+  userQueueIndex: (userId: string): string => `music:queue:${userId}:index`,
   deviceMeta: (deviceId: string): string => `music:device:${deviceId}:meta`,
   devicesOnline: (): string => "music:devices:online",
   pairingCode: (code: string): string => `music:pairing:${code}`,

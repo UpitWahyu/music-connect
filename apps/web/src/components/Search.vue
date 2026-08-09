@@ -132,11 +132,11 @@ async function playLink(): Promise<void> {
     <!-- ============ search modal ============ -->
     <div
       v-if="showSearch"
-      class="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       @click.self="closeSearch"
     >
       <div
-        class="flex max-h-[85vh] w-full max-w-md flex-col rounded-t-2xl border border-white/10 bg-[#16161f] shadow-2xl shadow-black/60 sm:rounded-2xl"
+        class="flex max-h-[85vh] w-full max-w-md flex-col rounded-2xl border border-white/10 bg-[#16161f] shadow-2xl shadow-black/60"
       >
         <div class="flex items-center justify-between border-b border-white/5 p-4">
           <h3 class="flex items-center gap-2 text-sm font-semibold">
@@ -243,10 +243,10 @@ async function playLink(): Promise<void> {
     <!-- ============ playlist link modal ============ -->
     <div
       v-if="showLink"
-      class="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       @click.self="showLink = false"
     >
-      <div class="w-full max-w-md rounded-t-2xl border border-white/10 bg-[#16161f] p-5 shadow-2xl shadow-black/60 sm:rounded-2xl">
+      <div class="w-full max-w-md rounded-2xl border border-white/10 bg-[#16161f] p-5 shadow-2xl shadow-black/60">
         <div class="mb-3 flex items-center justify-between">
           <h3 class="flex items-center gap-2 text-sm font-semibold">
             <Link2 :size="15" class="text-green-400" />

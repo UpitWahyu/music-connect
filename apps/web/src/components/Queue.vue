@@ -2,7 +2,7 @@
 import { computed, ref } from "vue";
 import { ListMusic, Music2, Play, Sparkles, Heart, FolderPlus } from "lucide-vue-next";
 import { api, type QueueItemDTO } from "../lib/api";
-import { store, refreshQueue, refreshState, refreshPlaylists } from "../composables/useMusic";
+import { store, refreshQueue, refreshState, refreshPlaylists, refreshFavorites } from "../composables/useMusic";
 import { formatDuration } from "../lib/format";
 
 const playingIndex = computed(() => store.queueIndex);
@@ -19,8 +19,14 @@ async function playItem(itemId: string): Promise<void> {
 }
 
 // --- favorite / save to playlist (same actions as search results) ---
-async function favorite(item: QueueItemDTO): Promise<void> {
-  await api.addFavorite(item.track).catch(() => null);
+function isFav(trackId: string): boolean {
+  return store.favorites.some((f) => f.trackId === trackId);
+}
+
+async function toggleFavorite(item: QueueItemDTO): Promise<void> {
+  if (isFav(item.track.id)) await api.removeFavorite(item.track.id).catch(() => null);
+  else await api.addFavorite(item.track).catch(() => null);
+  await refreshFavorites();
 }
 
 const saveFor = ref<QueueItemDTO | null>(null);
@@ -71,11 +77,12 @@ async function saveToPlaylist(playlistId: string): Promise<void> {
         <span class="shrink-0 text-xs text-neutral-600">{{ formatDuration(item.track.duration) }}</span>
         <div class="flex shrink-0 items-center gap-0.5">
           <button
-            class="rounded-lg p-1.5 text-neutral-500 transition hover:bg-white/10 hover:text-red-400"
-            title="Tambah ke favorit"
-            @click="favorite(item)"
+            class="rounded-lg p-1.5 transition"
+            :class="isFav(item.track.id) ? 'text-red-500' : 'text-neutral-500 hover:bg-white/10 hover:text-red-400'"
+            :title="isFav(item.track.id) ? 'Hapus dari favorit' : 'Tambah ke favorit'"
+            @click="toggleFavorite(item)"
           >
-            <Heart :size="13" />
+            <Heart :size="13" :fill="isFav(item.track.id) ? 'currentColor' : 'none'" />
           </button>
           <button
             class="rounded-lg p-1.5 text-neutral-500 transition hover:bg-white/10 hover:text-white"

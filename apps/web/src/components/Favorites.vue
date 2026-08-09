@@ -1,14 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted } from "vue";
 import { Heart, Play, X } from "lucide-vue-next";
-import { api, type FavoriteDTO } from "../lib/api";
-import { store, refreshQueue, refreshState } from "../composables/useMusic";
-
-const favorites = ref<FavoriteDTO[]>([]);
-
-async function load(): Promise<void> {
-  favorites.value = (await api.favorites()).favorites;
-}
+import { api } from "../lib/api";
+import { store, refreshFavorites, refreshState } from "../composables/useMusic";
 
 async function playTrack(trackId: string, title: string, artist: string): Promise<void> {
   if (!store.selectedDevice) return;
@@ -24,10 +18,12 @@ async function playTrack(trackId: string, title: string, artist: string): Promis
 
 async function unfavorite(trackId: string): Promise<void> {
   await api.removeFavorite(trackId);
-  await load();
+  await refreshFavorites();
 }
 
-onMounted(load);
+onMounted(() => {
+  void refreshFavorites();
+});
 </script>
 
 <template>
@@ -36,8 +32,8 @@ onMounted(load);
       <Heart :size="14" />
       Favorit
     </h2>
-    <ul v-if="favorites.length" class="divide-y divide-white/5">
-      <li v-for="f in favorites" :key="f.trackId" class="flex items-center gap-3 py-2 text-sm">
+    <ul v-if="store.favorites.length" class="divide-y divide-white/5">
+      <li v-for="f in store.favorites" :key="f.trackId" class="flex items-center gap-3 py-2 text-sm">
         <div class="min-w-0 flex-1">
           <div class="truncate font-medium">{{ f.title }}</div>
           <div class="truncate text-xs text-neutral-500">{{ f.artist }}</div>

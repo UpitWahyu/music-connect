@@ -67,7 +67,7 @@ onUnmounted(stopPolling);
       <Playlists v-if="tab === 'playlists'" />
       <Favorites v-if="tab === 'favorites'" />
       <History v-if="tab === 'history'" />
-      <Queue v-if="tab !== 'history'" />
+      <Queue v-if="tab !== 'history'" class="mt-6" />
     </div>
     <p v-else class="mt-24 text-center text-sm text-neutral-500">
       Pilih device untuk mulai mendengarkan

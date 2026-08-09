@@ -6,6 +6,7 @@ import { deviceService } from "../services/device.service.js";
 import { playbackService } from "../services/playback.service.js";
 import {
   addController,
+  broadcastToControllers,
   registerPlayer,
   removeController,
   unregisterPlayer,
@@ -83,10 +84,12 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
             registerPlayer(id, s);
             await deviceService.markOnline(id);
             s.send(JSON.stringify({ type: "player.ready" }));
-            // sync the stored per-device volume right after connect — mpv
-            // defaults to 100% and would otherwise report/stay that way
+            // the stored per-device volume sync — mpv defaults to 100% and
+            // would otherwise report/stay that way
             const vol = await deviceService.getVolume(id);
             s.send(JSON.stringify({ type: "player.setVolume", volume: vol }));
+            // hybrid realtime: controllers learn about the device going online
+            broadcastToControllers({ type: "device.updated", device: { id, online: true } });
           })();
         } else {
           s.close(4401, "AUTH_FIRST");
@@ -117,6 +120,8 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
       if (deviceId) {
         unregisterPlayer(deviceId, s);
         void deviceService.markOffline(deviceId);
+        // hybrid realtime: controllers learn about the device going offline
+        broadcastToControllers({ type: "device.updated", device: { id: deviceId, online: false } });
       }
     });
   });

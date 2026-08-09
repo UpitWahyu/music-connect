@@ -4,7 +4,7 @@ import { RedisKeys } from "@music-connect/shared";
 import { redis } from "../redis/client.js";
 import { prisma } from "../db/prisma.js";
 import { incCounter } from "../metrics.js";
-import { sendToPlayer } from "../ws/registry.js";
+import { sendToPlayer, broadcastToControllers } from "../ws/registry.js";
 import { deviceService } from "./device.service.js";
 import { queueService } from "./queue.service.js";
 import { musicService } from "./music.service.js";
@@ -274,6 +274,9 @@ export class PlaybackService {
     const cur = (await this.getState(deviceId)) ?? EMPTY_STATE(deviceId);
     const next: PlaybackState = { ...cur, ...patch, updatedAt: Date.now() };
     await redis.set(RedisKeys.deviceState(deviceId), JSON.stringify(next));
+    // hybrid realtime: push state to every controller; REST stays for commands.
+    // Player reports arrive ~1/s so this is naturally throttled.
+    broadcastToControllers({ type: "player.state", deviceId, state: next });
   }
 
   private requireOnline(sent: boolean): void {

@@ -106,7 +106,7 @@ export async function refreshAll(): Promise<void> {
   await Promise.all([refreshQueue(), refreshState()]);
 }
 
-// --- polling fallback (WS events make this unnecessary later) ---
+// --- polling fallback (WS push is primary; polling only as safety net) ---
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 /** Cross-browser fallback: follow the account-wide selected device. */
@@ -124,11 +124,12 @@ async function syncSelectedDevice(): Promise<void> {
 
 export function startPolling(): void {
   if (pollTimer) return;
+  // 10s safety net — realtime updates arrive over WS now (player.state push)
   pollTimer = setInterval(() => {
     void refreshAll();
     void refreshDevices(); // keep device list fresh (auto-select when online appears)
     void syncSelectedDevice(); // device selection sync even if WS events drop
-  }, 3000);
+  }, 10_000);
 }
 
 export function stopPolling(): void {
@@ -146,7 +147,11 @@ export function startRealtime(): void {
       // the queue is GLOBAL per account — always refresh, no device match needed
       void refreshQueue();
     } else if (event.type === "player.state" && event.deviceId === store.selectedDevice) {
-      void refreshState();
+      // hybrid realtime: server pushes state — use it directly, no REST round-trip
+      store.playback = event.state as PlaybackStateDTO;
+    } else if (event.type === "device.updated") {
+      // device went online/offline — refresh presence + auto-select if needed
+      void refreshDevices();
     } else if (event.type === "device.selected") {
       // another browser/tab changed the device — follow it
       const id = event.deviceId;

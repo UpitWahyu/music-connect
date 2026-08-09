@@ -147,6 +147,63 @@ afterAll(async () => {
 });
 
 const url = () => `ws://127.0.0.1:${port}/ws/player`;
+const controllerUrl = () => `ws://127.0.0.1:${port}/ws/controller`;
+
+/** Minimal controller: subscribes over WS like the web app does. */
+class FakeController {
+  private ws: WebSocket;
+  private queue: Record<string, unknown>[] = [];
+  private waiters: { type: string; resolve: (m: unknown) => void; timer: NodeJS.Timeout }[] = [];
+  opened: Promise<void>;
+
+  constructor() {
+    this.ws = new WebSocket(controllerUrl());
+    this.opened = new Promise((res, rej) => {
+      this.ws.once("open", () => res());
+      this.ws.once("error", rej);
+    });
+    this.ws.on("message", (data) => {
+      let msg: Record<string, unknown>;
+      try {
+        msg = JSON.parse(String(data)) as Record<string, unknown>;
+      } catch {
+        return;
+      }
+      const idx = this.waiters.findIndex((w) => w.type === msg.type);
+      if (idx >= 0) {
+        const [w] = this.waiters.splice(idx, 1);
+        clearTimeout(w.timer);
+        w.resolve(msg);
+      } else {
+        this.queue.push(msg);
+      }
+    });
+  }
+
+  send(obj: unknown): void {
+    this.ws.send(JSON.stringify(obj));
+  }
+
+  async auth(token: string): Promise<void> {
+    this.send({ type: "auth", token });
+  }
+
+  async next(type: string, timeout = 5000): Promise<Record<string, unknown>> {
+    const qi = this.queue.findIndex((m) => m.type === type);
+    if (qi >= 0) return this.queue.splice(qi, 1)[0]!;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.waiters = this.waiters.filter((w) => w.timer !== timer);
+        reject(new Error(`timeout waiting for ${type}`));
+      }, timeout);
+      this.waiters.push({ type, resolve, timer });
+    });
+  }
+
+  close(): void {
+    this.ws.close();
+  }
+}
 
 describe("player WebSocket auth", () => {
   it("auth success → player.ready + stored volume sync", async () => {
@@ -346,6 +403,56 @@ describe("handoff (device transfer)", () => {
     expect(stA.track?.id).toBe("H2");
     expect(stA.state).toBe("playing");
     a.close();
+  });
+});
+
+describe("hybrid realtime (WS push)", () => {
+  it("controller receives player.state push without polling", async () => {
+    const p = new FakePlayer(url());
+    await p.opened;
+    await p.auth(DEVICE, DEV_TOKEN);
+    await p.next("player.ready");
+    await p.next("player.setVolume");
+
+    const c = new FakeController();
+    await c.opened;
+    await c.auth(controllerToken);
+    await c.next("auth.ok");
+
+    await api("POST", `/api/devices/${DEVICE}/play`, { trackId: "R1", track: track("R1") });
+    await p.next("player.load");
+    p.report({ trackId: "R1", status: "playing", position: 12, queueIndex: 0 });
+
+    // the push must arrive on the controller WS with the reported position
+    // (first push is position 0 from loadTrack; the report then pushes 12)
+    let ev = (await c.next("player.state")) as { deviceId: string; state: { track: { id: string }; position: number } };
+    for (let i = 0; i < 5 && ev.state?.position !== 12; i++) {
+      ev = (await c.next("player.state")) as typeof ev;
+    }
+    expect(ev.deviceId).toBe(DEVICE);
+    expect(ev.state.track.id).toBe("R1");
+    expect(ev.state.position).toBe(12);
+    c.close();
+    p.close();
+  });
+
+  it("controller receives device.updated when a player connects", async () => {
+    const c = new FakeController();
+    await c.opened;
+    await c.auth(controllerToken);
+    await c.next("auth.ok");
+
+    const p = new FakePlayer(url());
+    await p.opened;
+    await p.auth(DEVICE, DEV_TOKEN);
+    await p.next("player.ready");
+    await p.next("player.setVolume");
+
+    const ev = (await c.next("device.updated")) as { device: { id: string; online: boolean } };
+    expect(ev.device.id).toBe(DEVICE);
+    expect(ev.device.online).toBe(true);
+    c.close();
+    p.close();
   });
 });
 

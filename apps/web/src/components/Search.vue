@@ -270,7 +270,7 @@ async function playLink(): Promise<void> {
         <p v-if="linkError" class="mt-2 text-xs text-red-400">{{ linkError }}</p>
         <div class="mt-4 flex gap-2">
           <button
-            class="flex-1 rounded-xl bg-green-500 py-2.5 text-sm font-semibold text-black transition hover:bg-green-400 disabled:opacity-50"
+            class="flex-1 rounded-xl bg-green-500 px-4 py-2.5 text-sm font-semibold text-black transition hover:bg-green-400 disabled:opacity-50"
             :disabled="linkBusy || !linkUrl.trim()"
             @click="playLink"
           >

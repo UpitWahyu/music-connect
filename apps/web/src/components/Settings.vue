@@ -98,7 +98,7 @@ const inputCls =
 const sectionCls = "mb-8 rounded-2xl border border-white/5 bg-[#14141c] p-4";
 const labelCls = "mb-2.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400";
 const btnCls =
-  "mt-5 w-full rounded-xl bg-green-500 py-2.5 text-sm font-semibold text-black transition hover:bg-green-400 disabled:opacity-50";
+  "mt-5 w-full rounded-xl bg-green-500 px-4 py-2.5 text-sm font-semibold text-black transition hover:bg-green-400 disabled:opacity-50";
 </script>
 
 <template>

@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { Track } from "@music-connect/types";
 import { queueService } from "../services/queue.service.js";
 import { playbackService } from "../services/playback.service.js";
+import { broadcastToControllers } from "../ws/registry.js";
 
 /** Queue API (PRD §24, §28). Queue is server-managed, Redis-backed (D-05). */
 export async function queueRoutes(app: FastifyInstance): Promise<void> {
@@ -27,7 +28,9 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
   /** Deletes by stable item id — not index (see §41). */
   app.delete("/api/devices/:id/queue/:itemId", async (req) => {
     const { id, itemId } = req.params as { id: string; itemId: string };
-    return { queue: await queueService.remove(id, itemId) };
+    const queue = await queueService.remove(id, itemId);
+    broadcastToControllers({ type: "queue.updated", deviceId: id, queue }); // sync all browsers
+    return { queue };
   });
 
   /** Reorder queue by item ids (client-side sort commits the new order). */
@@ -38,7 +41,9 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "MISSING_ORDER" });
     }
     try {
-      return { queue: await queueService.reorder(id, body.order) };
+      const queue = await queueService.reorder(id, body.order);
+      broadcastToControllers({ type: "queue.updated", deviceId: id, queue }); // sync all browsers
+      return { queue };
     } catch (e) {
       return reply.code(400).send({ error: (e as Error).message });
     }

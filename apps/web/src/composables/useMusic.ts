@@ -142,7 +142,8 @@ let disconnectWs: (() => void) | null = null;
 export function startRealtime(): void {
   stopRealtime();
   disconnectWs = connectControllerWs((event) => {
-    if (event.type === "queue.updated" && event.deviceId === store.selectedDevice) {
+    if (event.type === "queue.updated") {
+      // the queue is GLOBAL per account — always refresh, no device match needed
       void refreshQueue();
     } else if (event.type === "player.state" && event.deviceId === store.selectedDevice) {
       void refreshState();

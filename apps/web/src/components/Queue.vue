@@ -5,6 +5,51 @@ import { api, type QueueItemDTO } from "../lib/api";
 import { store, refreshQueue, refreshState, refreshPlaylists, refreshFavorites } from "../composables/useMusic";
 import { formatDuration } from "../lib/format";
 
+// --- drag & drop reorder (native HTML5; optimistic + server commit) ---
+const dragId = ref<string | null>(null);
+const dragOverId = ref<string | null>(null);
+
+function onDragStart(itemId: string, e: DragEvent): void {
+  dragId.value = itemId;
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", itemId);
+  }
+}
+
+function onDragOver(itemId: string, e: DragEvent): void {
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+  if (dragOverId.value !== itemId) dragOverId.value = itemId;
+}
+
+function onDragEnd(): void {
+  dragId.value = null;
+  dragOverId.value = null;
+}
+
+async function onDrop(itemId: string, e: DragEvent): Promise<void> {
+  e.preventDefault(); // stop the browser from navigating on drop
+  const from = dragId.value;
+  const to = itemId;
+  dragId.value = null;
+  dragOverId.value = null;
+  if (!from || from === to) return;
+  const arr = [...store.queue];
+  const i = arr.findIndex((x) => x.id === from);
+  const j = arr.findIndex((x) => x.id === to);
+  if (i < 0 || j < 0 || !store.selectedDevice) return;
+  const [moved] = arr.splice(i, 1);
+  arr.splice(j, 0, moved);
+  store.queue = arr; // optimistic UI
+  try {
+    await api.reorderQueue(store.selectedDevice, arr.map((x) => x.id));
+  } catch {
+    // server rejected — refetch authoritative order
+  }
+  void refreshQueue();
+}
+
 const playingIndex = computed(() => store.queueIndex);
 
 // --- play item ---
@@ -67,7 +112,13 @@ async function togglePlaylist(playlistId: string): Promise<void> {
       <li
         v-for="(item, i) in store.queue"
         :key="item.id"
-        class="relative flex items-center gap-3 py-2 text-sm transition hover:bg-white/5"
+        class="relative flex cursor-grab items-center gap-3 py-2 text-sm transition active:cursor-grabbing"
+        :class="dragOverId === item.id ? 'rounded-lg bg-white/5 ring-1 ring-green-500/60' : 'hover:bg-white/5'"
+        draggable="true"
+        @dragstart="onDragStart(item.id, $event)"
+        @dragover="onDragOver(item.id, $event)"
+        @dragend="onDragEnd"
+        @drop="onDrop(item.id)"
       >
         <button
           class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition"

@@ -5,7 +5,7 @@ import { api } from "../lib/api";
 import { store, refreshQueue, refreshState } from "../composables/useMusic";
 import { formatDuration } from "../lib/format";
 
-const playingIndex = computed(() => store.playback?.queueIndex ?? 0);
+const playingIndex = computed(() => store.queueIndex);
 
 // --- play item ---
 async function playItem(itemId: string): Promise<void> {

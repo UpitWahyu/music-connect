@@ -7,7 +7,8 @@ import { playbackService } from "../services/playback.service.js";
 export async function queueRoutes(app: FastifyInstance): Promise<void> {
   app.get("/api/devices/:id/queue", async (req) => {
     const { id } = req.params as { id: string };
-    return { queue: await queueService.get(id) };
+    // index is the GLOBAL queue cursor — same from every device of the user
+    return { queue: await queueService.get(id), index: await queueService.getIndex(id) };
   });
 
   app.post("/api/devices/:id/queue", async (req, reply) => {

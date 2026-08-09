@@ -7,6 +7,7 @@ export const store = reactive({
   devices: [] as DeviceDTO[],
   selectedDevice: null as string | null,
   queue: [] as QueueItemDTO[],
+  queueIndex: 0, // GLOBAL queue cursor — independent of the selected device
   playback: null as PlaybackStateDTO | null,
   playlists: [] as PlaylistDTO[],
 });
@@ -63,7 +64,8 @@ export async function selectDevice(id: string): Promise<void> {
 export async function selectDeviceAuto(id: string): Promise<void> {
   const from = store.selectedDevice;
   const target = store.devices.find((d) => d.id === id);
-  if (from && from !== id && target?.online) {
+  // only auto-transfer when the source device is actually playing something
+  if (from && from !== id && target?.online && store.playback?.track) {
     try {
       await api.transfer(from, id); // stop old, load + seek on new (D-10)
     } catch {
@@ -75,7 +77,9 @@ export async function selectDeviceAuto(id: string): Promise<void> {
 
 export async function refreshQueue(): Promise<void> {
   if (!store.selectedDevice) return;
-  store.queue = (await api.queue(store.selectedDevice)).queue;
+  const r = await api.queue(store.selectedDevice);
+  store.queue = r.queue;
+  store.queueIndex = r.index ?? 0;
 }
 
 export async function refreshState(): Promise<void> {

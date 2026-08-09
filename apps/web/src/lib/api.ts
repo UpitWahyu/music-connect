@@ -103,7 +103,7 @@ export const api = {
   playlistMeta: (id: string) =>
     request<{ playlist: { title: string; tracks: TrackDTO[] } | null }>("/music/playlists/" + encodeURIComponent(id)),
 
-  queue: (deviceId: string) => request<{ queue: QueueItemDTO[] }>(`/devices/${deviceId}/queue`),
+  queue: (deviceId: string) => request<{ queue: QueueItemDTO[]; index: number }>(`/devices/${deviceId}/queue`),
   clearQueue: (deviceId: string) =>
     request<{ queue: QueueItemDTO[] }>(`/devices/${deviceId}/queue/clear`, { method: "POST", body: "{}" }),
   reorderQueue: (deviceId: string, order: string[]) =>

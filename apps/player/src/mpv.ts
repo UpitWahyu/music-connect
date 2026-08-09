@@ -36,8 +36,9 @@ export class Mpv extends EventEmitter {
 
   start(): void {
     this.proc = spawn("mpv", ["--no-video", "--idle=yes", `--input-ipc-server=${this.socketPath}`], {
-      stdio: "ignore",
+      stdio: ["ignore", "ignore", "pipe"],
     });
+    this.proc.stderr?.on("data", (d: Buffer) => this.emit("stderr", d.toString()));
     this.proc.on("error", (err) => this.emit("error", err));
     this.proc.on("exit", (code) => {
       this.emit("exit", code);

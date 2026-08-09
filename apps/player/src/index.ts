@@ -80,6 +80,11 @@ mpv.on("error", (err) => {
   console.error("[player] mpv error:", err instanceof Error ? err.message : err);
 });
 
+// mpv's own stderr — invaluable for load failures (yt-dlp missing, etc.)
+mpv.on("stderr", (line: string) => {
+  for (const l of line.split("\n").filter(Boolean)) console.error("[mpv]", l.trim());
+});
+
 async function pair(cfg: PlayerConfig, code: string): Promise<{ deviceId: string; token: string }> {
   // HTTP base = origin only — serverUrl may carry a WS path (e.g. /ws/player)
   const u = new URL(cfg.serverUrl);

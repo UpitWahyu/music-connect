@@ -39,11 +39,18 @@ export class Mpv extends EventEmitter {
       stdio: ["ignore", "ignore", "pipe"],
     });
     this.proc.stderr?.on("data", (d: Buffer) => this.emit("stderr", d.toString()));
-    this.proc.on("error", (err) => this.emit("error", err));
+    this.proc.on("error", (err) => {
+      // spawn failure (e.g. mpv binary missing) — give a clear hint
+      this.emit("error", err);
+      console.error("[player] mpv FAILED TO START:", err.message, "— is mpv installed and on PATH?");
+    });
     this.proc.on("exit", (code) => {
       this.emit("exit", code);
       this.sock?.destroy();
       this.sock = null;
+      console.error(`[player] mpv exited (code ${code}) — restarting in 2s`);
+      // mpv may crash on first audio init (common on Android/Termux) — respawn
+      setTimeout(() => this.start(), 2000);
     });
     this.connectWithRetry();
   }

@@ -39,7 +39,8 @@ async function onDrop(itemId: string, e: DragEvent): Promise<void> {
   const i = arr.findIndex((x) => x.id === from);
   const j = arr.findIndex((x) => x.id === to);
   if (i < 0 || j < 0 || !store.selectedDevice) return;
-  const [moved] = arr.splice(i, 1);
+  const moved = arr.splice(i, 1)[0];
+  if (!moved) return;
   arr.splice(j, 0, moved);
   store.queue = arr; // optimistic UI
   try {
@@ -57,7 +58,8 @@ async function moveItem(itemId: string, dir: -1 | 1): Promise<void> {
   const i = arr.findIndex((x) => x.id === itemId);
   const j = i + dir;
   if (i < 0 || j < 0 || j >= arr.length) return;
-  const [moved] = arr.splice(i, 1);
+  const moved = arr.splice(i, 1)[0];
+  if (!moved) return;
   arr.splice(j, 0, moved);
   store.queue = arr;
   try {
@@ -136,7 +138,7 @@ async function togglePlaylist(playlistId: string): Promise<void> {
         @dragstart="onDragStart(item.id, $event)"
         @dragover="onDragOver(item.id, $event)"
         @dragend="onDragEnd"
-        @drop="onDrop(item.id)"
+        @drop="onDrop(item.id, $event)"
       >
         <!-- move handle (mobile-friendly reorder) -->
         <div class="flex shrink-0 flex-col">

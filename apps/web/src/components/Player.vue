@@ -289,14 +289,16 @@ async function saveMac(): Promise<void> {
             </button>
           </template>
           <template v-else>
-            <input
-              v-model="macInput"
-              placeholder="MAC: 00:D8:61:BD:87:DD"
-              class="mr-1 w-44 rounded bg-black/40 px-2 py-1.5 text-xs outline-none"
-            />
-            <button class="rounded-lg bg-white/10 px-2.5 py-1.5 transition hover:bg-white/15" @click="saveMac">
-              Simpan
-            </button>
+            <div class="flex items-center gap-2">
+              <input
+                v-model="macInput"
+                placeholder="MAC: 00:D8:61:BD:87:DD"
+                class="w-44 rounded bg-black/40 px-2 py-1.5 text-xs outline-none"
+              />
+              <button class="rounded-lg bg-white/10 px-3.5 py-1.5 transition hover:bg-white/15" @click="saveMac">
+                Simpan
+              </button>
+            </div>
           </template>
           <p v-if="wakeMsg" class="mt-1.5 text-neutral-400">{{ wakeMsg }}</p>
         </div>

@@ -95,10 +95,10 @@ async function copyCode(): Promise<void> {
 
 const inputCls =
   "w-full rounded-xl border border-white/5 bg-[#14141c] px-3 py-2.5 text-sm outline-none placeholder:text-neutral-600 focus:border-green-500/40";
-const sectionCls = "mb-4 rounded-2xl border border-white/5 bg-[#14141c] p-4";
-const labelCls = "mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400";
+const sectionCls = "mb-8 rounded-2xl border border-white/5 bg-[#14141c] p-4";
+const labelCls = "mb-2.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400";
 const btnCls =
-  "flex-1 rounded-xl bg-green-500 py-2.5 text-sm font-semibold text-black transition hover:bg-green-400 disabled:opacity-50";
+  "mt-5 w-full rounded-xl bg-green-500 py-2.5 text-sm font-semibold text-black transition hover:bg-green-400 disabled:opacity-50";
 </script>
 
 <template>
@@ -121,12 +121,12 @@ const btnCls =
           <User :size="13" />
           Username
         </h2>
-        <div class="space-y-2.5">
+        <div class="space-y-3">
           <input v-model="uname" type="text" placeholder="Username baru (min. 3 karakter)" :class="inputCls" />
           <input v-model="unamePw" type="password" placeholder="Password saat ini (verifikasi)" :class="inputCls" />
         </div>
         <p v-if="unameMsg" class="mt-2 text-xs text-red-400">{{ unameMsg }}</p>
-        <button :class="btnCls" class="mt-3" :disabled="unameBusy || !uname || !unamePw" @click="saveUsername">
+        <button :class="btnCls" :disabled="unameBusy || !uname || !unamePw" @click="saveUsername">
           {{ unameBusy ? "Menyimpan…" : "Simpan Username" }}
         </button>
       </section>
@@ -137,13 +137,13 @@ const btnCls =
           <KeyRound :size="13" />
           Password
         </h2>
-        <div class="space-y-2.5">
+        <div class="space-y-3">
           <input v-model="oldPw" type="password" placeholder="Password lama" :class="inputCls" />
           <input v-model="newPw" type="password" placeholder="Password baru (min. 6 karakter)" :class="inputCls" />
           <input v-model="confirmPw" type="password" placeholder="Ulangi password baru" :class="inputCls" @keyup.enter="savePassword" />
         </div>
         <p v-if="pwMsg" class="mt-2 text-xs text-red-400">{{ pwMsg }}</p>
-        <button :class="btnCls" class="mt-3" :disabled="pwBusy || !oldPw || !newPw || !confirmPw" @click="savePassword">
+        <button :class="btnCls" :disabled="pwBusy || !oldPw || !newPw || !confirmPw" @click="savePassword">
           {{ pwBusy ? "Menyimpan…" : "Simpan Password" }}
         </button>
       </section>

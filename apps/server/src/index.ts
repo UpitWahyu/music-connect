@@ -26,7 +26,7 @@ app.addContentTypeParser("application/json", { parseAs: "string" }, (_req, body,
 
 await app.register(cors, { origin: true });
 await app.register(jwt, { secret: config.jwtSecret });
-await app.register(rateLimit, { max: 100, timeWindow: "1 minute" });
+await app.register(rateLimit, { max: 300, timeWindow: "1 minute" }); // generous: web polls + volume debounce
 await app.register(websocket);
 
 // Health endpoint (PRD §41 D-12) — for Tianji / uptime monitoring

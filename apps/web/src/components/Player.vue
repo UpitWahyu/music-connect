@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { api } from "../lib/api";
 import { store, refreshState, refreshAll, refreshDevices } from "../composables/useMusic";
 import { formatDuration } from "../lib/format";
@@ -7,9 +7,29 @@ import { formatDuration } from "../lib/format";
 const pb = computed(() => store.playback);
 const isPlaying = computed(() => pb.value?.state === "playing");
 const track = computed(() => pb.value?.track ?? null);
-const volume = computed(() => pb.value?.volume ?? 70);
 const otherDevices = computed(() => store.devices.filter((d) => d.id !== store.selectedDevice));
 const thisDevice = computed(() => store.devices.find((d) => d.id === store.selectedDevice) ?? null);
+
+// Volume: local ref for instant slider feedback, debounced commit to the API
+// (dragging fires dozens of @input events — each one would hit the rate limit).
+const volumeLocal = ref(70);
+let volumeTimer: ReturnType<typeof setTimeout> | null = null;
+
+function syncVolumeFromState(v: number | undefined): void {
+  if (v !== undefined && Math.abs(v - volumeLocal.value) > 3) volumeLocal.value = v;
+}
+watch(
+  () => pb.value?.volume,
+  (v) => syncVolumeFromState(v),
+);
+
+function volumeInput(e: Event): void {
+  volumeLocal.value = Number((e.target as HTMLInputElement).value);
+  if (volumeTimer) clearTimeout(volumeTimer);
+  volumeTimer = setTimeout(() => {
+    if (store.selectedDevice) void cmd(() => api.volume(store.selectedDevice!, volumeLocal.value));
+  }, 400);
+}
 
 const macInput = ref("");
 const wakeMsg = ref("");
@@ -112,11 +132,11 @@ async function transferTo(e: Event): Promise<void> {
         type="range"
         min="0"
         max="100"
-        :value="volume"
+        :value="volumeLocal"
         class="w-full accent-green-500"
-        @input="changeVolume"
+        @input="volumeInput"
       />
-      <span class="w-8 text-right text-xs text-gray-400">{{ volume }}</span>
+      <span class="w-8 text-right text-xs text-gray-400">{{ volumeLocal }}</span>
     </div>
 
     <div v-if="otherDevices.length" class="mt-3 flex items-center justify-center gap-2 text-xs">

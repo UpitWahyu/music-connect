@@ -30,6 +30,12 @@ export function unregisterPlayer(deviceId: string): void {
   players.delete(deviceId);
 }
 
+/** Live presence — source of truth for the device list (Redis set can go stale). */
+export function isPlayerRegistered(deviceId: string): boolean {
+  const s = players.get(deviceId);
+  return !!s && s.readyState === 1;
+}
+
 export function addController(socket: SocketLike): void {
   controllers.add(socket);
 }

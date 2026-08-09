@@ -126,21 +126,41 @@ export class Mpv extends EventEmitter {
     }
   }
 
-  command(cmd: (string | number | boolean)[]): Promise<unknown> {
+  /** Resolve once the mpv IPC socket is ready (mpv may take a moment to boot). */
+  private waitConnected(timeoutMs = 15000): Promise<void> {
+    if (this.sock) return Promise.resolve();
     return new Promise((resolve, reject) => {
-      if (!this.sock) {
-        reject(new Error("mpv not connected"));
-        return;
-      }
-      const id = this.nextId++;
+      const onConnected = (): void => {
+        clearTimeout(timer);
+        resolve();
+      };
       const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`mpv command timeout: ${String(cmd[0])}`));
-      }, 5000);
+        this.off("connected", onConnected);
+        reject(new Error("mpv not connected"));
+      }, timeoutMs);
       timer.unref();
-      this.pending.set(id, { resolve, reject, timer });
-      this.sock.write(JSON.stringify({ command: cmd, request_id: id }) + "\n");
+      this.once("connected", onConnected);
     });
+  }
+
+  command(cmd: (string | number | boolean)[]): Promise<unknown> {
+    return this.waitConnected().then(
+      () =>
+        new Promise((resolve, reject) => {
+          if (!this.sock) {
+            reject(new Error("mpv not connected"));
+            return;
+          }
+          const id = this.nextId++;
+          const timer = setTimeout(() => {
+            this.pending.delete(id);
+            reject(new Error(`mpv command timeout: ${String(cmd[0])}`));
+          }, 5000);
+          timer.unref();
+          this.pending.set(id, { resolve, reject, timer });
+          this.sock.write(JSON.stringify({ command: cmd, request_id: id }) + "\n");
+        }),
+    );
   }
 
   async load(url: string, position?: number): Promise<void> {

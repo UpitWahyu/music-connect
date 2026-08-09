@@ -171,6 +171,16 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ oldPassword, newPassword }),
     }),
+  changeUsername: (password: string, newUsername: string) =>
+    request<{ ok: boolean }>("/auth/profile", {
+      method: "PUT",
+      body: JSON.stringify({ password, newUsername }),
+    }),
+  pairDevice: (deviceId: string) =>
+    request<{ pairingCode: string; expiresIn: number; deviceId: string }>(
+      "/devices/" + encodeURIComponent(deviceId) + "/pair",
+      { method: "POST", body: "{}" },
+    ),
   getSelectedDevice: () => request<{ deviceId: string | null }>("/selected-device"),
   setSelectedDevice: (deviceId: string) =>
     request<{ ok: boolean }>("/selected-device", { method: "PUT", body: JSON.stringify({ deviceId }) }),

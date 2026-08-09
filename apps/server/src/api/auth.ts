@@ -78,4 +78,31 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return { ok: true };
     },
   );
+
+  // Change the username (requires the current password).
+  app.put(
+    "/api/auth/profile",
+    {
+      config: { rateLimit: { max: 5, timeWindow: "1 minute" } },
+    },
+    async (req, reply) => {
+      const uid = (req.user as { sub?: string }).sub;
+      if (!uid) return reply.code(401).send({ error: "UNAUTHORIZED" });
+      const { password, newUsername } = (req.body ?? {}) as {
+        password?: string;
+        newUsername?: string;
+      };
+      if (!password || !newUsername?.trim()) return reply.code(400).send({ error: "MISSING_FIELDS" });
+      const username = newUsername.trim();
+      if (username.length < 3) return reply.code(400).send({ error: "USERNAME_TOO_SHORT" });
+      const user = await prisma.user.findUnique({ where: { id: uid } });
+      if (!user || !verifyPassword(password, user.passwordHash)) {
+        return reply.code(401).send({ error: "INVALID_CREDENTIALS" });
+      }
+      const exists = await prisma.user.findUnique({ where: { username } });
+      if (exists && exists.id !== uid) return reply.code(409).send({ error: "USERNAME_TAKEN" });
+      await prisma.user.update({ where: { id: uid }, data: { username } });
+      return { ok: true };
+    },
+  );
 }

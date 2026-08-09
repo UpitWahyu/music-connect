@@ -1,23 +1,27 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { computed, onMounted } from "vue";
 import { store, refreshDevices, selectDevice } from "../composables/useMusic";
 
 onMounted(() => {
   void refreshDevices();
 });
 
-function onChange(): void {
-  if (store.selectedDevice) void selectDevice(store.selectedDevice);
-}
+// v-model backed by the store: picking a device sets store.selectedDevice
+// and triggers refreshAll (queue + playback state).
+const selected = computed({
+  get: () => store.selectedDevice ?? "",
+  set: (v: string) => {
+    if (v) void selectDevice(v);
+  },
+});
 </script>
 
 <template>
   <select
-    :value="store.selectedDevice ?? undefined"
+    v-model="selected"
     class="rounded-lg border border-gray-700 bg-gray-800 px-2 py-1 text-sm"
-    @change="onChange"
   >
-    <option :value="undefined" disabled>Select a device</option>
+    <option value="" disabled>Select a device</option>
     <option v-for="d in store.devices" :key="d.id" :value="d.id">
       {{ d.name || d.id }} {{ d.online ? "🟢" : "⚪" }}
     </option>

@@ -30,11 +30,25 @@ async function toggleFavorite(item: QueueItemDTO): Promise<void> {
 }
 
 const saveFor = ref<QueueItemDTO | null>(null);
+const containsMap = ref<Record<string, boolean>>({});
 
-async function saveToPlaylist(playlistId: string): Promise<void> {
+async function openPlaylistPicker(item: QueueItemDTO): Promise<void> {
+  saveFor.value = saveFor.value?.id === item.id ? null : item;
+  if (saveFor.value) {
+    const r = await api.playlistsWithTrack(item.track.id).catch(() => null);
+    containsMap.value = Object.fromEntries((r?.playlists ?? []).map((p) => [p.id, p.contains]));
+  }
+}
+
+/** Toggle: add to the playlist, or remove when already contained. */
+async function togglePlaylist(playlistId: string): Promise<void> {
   if (!saveFor.value) return;
-  await api.addToPlaylist(playlistId, saveFor.value.track).catch(() => null);
-  saveFor.value = null;
+  if (containsMap.value[playlistId]) {
+    await api.removeFromPlaylist(playlistId, saveFor.value.track.id).catch(() => null);
+  } else {
+    await api.addToPlaylist(playlistId, saveFor.value.track).catch(() => null);
+  }
+  containsMap.value = { ...containsMap.value, [playlistId]: !containsMap.value[playlistId] };
   await refreshPlaylists();
 }
 </script>
@@ -86,8 +100,8 @@ async function saveToPlaylist(playlistId: string): Promise<void> {
           </button>
           <button
             class="rounded-lg p-1.5 text-neutral-500 transition hover:bg-white/10 hover:text-white"
-            title="Simpan ke playlist"
-            @click="saveFor = saveFor?.id === item.id ? null : item"
+            :title="saveFor?.id === item.id ? 'Tutup' : 'Simpan ke playlist'"
+            @click="openPlaylistPicker(item)"
           >
             <FolderPlus :size="13" />
           </button>
@@ -102,10 +116,12 @@ async function saveToPlaylist(playlistId: string): Promise<void> {
             <button
               v-for="p in store.playlists"
               :key="p.id"
-              class="rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-medium transition hover:bg-green-500 hover:text-black"
-              @click="saveToPlaylist(p.id)"
+              class="rounded-lg px-2.5 py-1.5 text-xs font-medium transition"
+              :class="containsMap[p.id] ? 'bg-green-500 text-black' : 'bg-white/10 hover:bg-green-500 hover:text-black'"
+              :title="containsMap[p.id] ? 'Hapus dari playlist' : 'Tambah ke playlist'"
+              @click="togglePlaylist(p.id)"
             >
-              {{ p.name }}
+              {{ p.name }}{{ containsMap[p.id] ? " ✓" : "" }}
             </button>
           </div>
           <p v-else class="text-xs text-neutral-500">Belum ada playlist — buat di tab Playlist</p>

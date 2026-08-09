@@ -32,6 +32,12 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
     playlists: await playlistService.list(userIdOf(req)),
   }));
 
+  /** Contains-status per playlist for one track (queue toggle UI). */
+  app.get("/api/playlists/contains/:trackId", async (req) => {
+    const { trackId } = req.params as { trackId: string };
+    return { playlists: await playlistService.listWithTrackStatus(userIdOf(req), trackId) };
+  });
+
   app.get("/api/playlists/:id", async (req) => ({
     playlist: await playlistService.get(userIdOf(req), (req.params as { id: string }).id),
   }));

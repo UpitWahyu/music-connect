@@ -147,6 +147,10 @@ export const api = {
   // --- Phase 8: persistent library ---
   createPlaylist: (name: string) => request<{ playlist: { id: string; name: string } }>("/playlists", { method: "POST", body: JSON.stringify({ name }) }),
   playlists: () => request<{ playlists: PlaylistDTO[] }>("/playlists"),
+  playlistsWithTrack: (trackId: string) =>
+    request<{ playlists: { id: string; name: string; contains: boolean }[] }>(
+      "/playlists/contains/" + encodeURIComponent(trackId),
+    ),
   playlistDetail: (id: string) => request<{ playlist: { id: string; name: string; tracks: PlaylistTrackDTO[] } | null }>(`/playlists/${id}`),
   deletePlaylist: (id: string) => request(`/playlists/${id}`, { method: "DELETE" }),
   addToPlaylist: (playlistId: string, track: TrackDTO) =>

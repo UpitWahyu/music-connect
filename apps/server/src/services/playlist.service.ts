@@ -65,6 +65,15 @@ export class PlaylistService {
     });
   }
 
+  /** Playlists with whether they already contain the given track (toggle UI). */
+  async listWithTrackStatus(userId: string, trackId: string) {
+    const playlists = await prisma.playlist.findMany({
+      where: { userId },
+      include: { tracks: { where: { trackId }, select: { id: true } } },
+    });
+    return playlists.map((p) => ({ id: p.id, name: p.name, contains: p.tracks.length > 0 }));
+  }
+
   async removeTrack(userId: string, playlistId: string, trackId: string) {
     const playlist = await prisma.playlist.findFirst({ where: { id: playlistId, userId }, select: { id: true } });
     if (!playlist) throw new Error("PLAYLIST_NOT_FOUND");

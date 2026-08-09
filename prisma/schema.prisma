@@ -94,6 +94,8 @@ model PlaybackHistory {
   title    String
   artist   String
   playedAt DateTime @default(now())
+
+  @@index([userId, playedAt]) // history tab: per-user, newest first
 }
 
 model ProviderAccount {

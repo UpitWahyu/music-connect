@@ -17,7 +17,8 @@ import { libraryRoutes } from "./api/library.js";
 
 /** Build the Fastify app (plugins, guards, routes). Exported for tests. */
 export async function buildApp(): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false });
+  // structured JSON logs (pino) — one line per request/event for PM2/observability
+  const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" } });
 
   // Accept POST with an empty JSON body (e.g. pause/resume/next without payload)
   app.addContentTypeParser("application/json", { parseAs: "string" }, (_req, body, done) => {
@@ -52,6 +53,14 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.get("/metrics", async (_req, reply) => {
     reply.header("content-type", "text/plain; version=0.0.4; charset=utf-8");
     return metricsText();
+  });
+
+  // Security headers on every response (CSP omitted — Vue injects inline styles)
+  app.addHook("onSend", async (_req, reply) => {
+    reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("X-Frame-Options", "DENY");
+    reply.header("Referrer-Policy", "no-referrer");
+    reply.header("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   });
 
   // Auth guard (PRD §30): all /api/* routes require a JWT except login and the

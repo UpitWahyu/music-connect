@@ -14,6 +14,17 @@ const METADATA_TTL_SECONDS = 86_400; // D-09
 export class MusicService {
   private readonly providers: MusicProvider[] = [new YoutubeMusicProvider()];
 
+  /** Single-flight: concurrent identical lookups share one provider call. */
+  private readonly inFlight = new Map<string, Promise<unknown>>();
+
+  private withSingleFlight<T>(key: string, fetch: () => Promise<T>): Promise<T> {
+    const existing = this.inFlight.get(key);
+    if (existing) return existing as Promise<T>;
+    const p = fetch().finally(() => this.inFlight.delete(key));
+    this.inFlight.set(key, p);
+    return p;
+  }
+
   private provider(id: string): MusicProvider | undefined {
     return this.providers.find((p) => p.id === id);
   }
@@ -22,18 +33,23 @@ export class MusicService {
     const cacheKey = RedisKeys.cacheSearch(query);
     const cached = await redis.get(cacheKey);
     if (cached) return JSON.parse(cached) as Track[];
-    const results = (await this.provider("youtube-music")?.search(query)) ?? [];
-    if (results.length > 0) await redis.set(cacheKey, JSON.stringify(results), "EX", SEARCH_TTL_SECONDS);
-    return results;
+    // cache miss + many controllers typing the same query → one YouTube call
+    return this.withSingleFlight(`search:${query}`, async () => {
+      const results = (await this.provider("youtube-music")?.search(query)) ?? [];
+      if (results.length > 0) await redis.set(cacheKey, JSON.stringify(results), "EX", SEARCH_TTL_SECONDS);
+      return results;
+    });
   }
 
   async getTrack(id: string): Promise<Track | null> {
     const cacheKey = RedisKeys.cacheMetadata("youtube-music", id);
     const cached = await redis.get(cacheKey);
     if (cached) return JSON.parse(cached) as Track;
-    const track = (await this.provider("youtube-music")?.getTrack(id)) ?? null;
-    if (track) await redis.set(cacheKey, JSON.stringify(track), "EX", METADATA_TTL_SECONDS);
-    return track;
+    return this.withSingleFlight(`track:${id}`, async () => {
+      const track = (await this.provider("youtube-music")?.getTrack(id)) ?? null;
+      if (track) await redis.set(cacheKey, JSON.stringify(track), "EX", METADATA_TTL_SECONDS);
+      return track;
+    });
   }
 
   async getAlbum(id: string): Promise<Album | null> {
@@ -57,9 +73,11 @@ export class MusicService {
     const cacheKey = RedisKeys.cacheMetadata("youtube-music", suffix);
     const cached = await redis.get(cacheKey);
     if (cached) return JSON.parse(cached) as T;
-    const value = await fetch();
-    if (value) await redis.set(cacheKey, JSON.stringify(value), "EX", METADATA_TTL_SECONDS);
-    return value;
+    return this.withSingleFlight(`meta:${suffix}`, async () => {
+      const value = await fetch();
+      if (value) await redis.set(cacheKey, JSON.stringify(value), "EX", METADATA_TTL_SECONDS);
+      return value;
+    });
   }
 }
 

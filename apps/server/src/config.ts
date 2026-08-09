@@ -1,4 +1,11 @@
-import "dotenv/config";
+import { config as loadEnv } from "dotenv";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+
+// Load the ROOT .env explicitly — PM2 runs with cwd=apps/server, where the
+// plain dotenv/config lookup would silently miss it and fall back to the
+// hardcoded dev secret (a real security hole once the repo is public).
+loadEnv({ path: resolve(dirname(fileURLToPath(import.meta.url)), "../../../.env") });
 
 export interface ServerConfig {
   port: number;

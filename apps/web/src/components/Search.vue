@@ -26,6 +26,13 @@ async function doSearch(): Promise<void> {
   }
 }
 
+// debounce live typing — don't hammer the API on every keystroke (q, qu, que…)
+let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+function onQueryInput(): void {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => void doSearch(), 350);
+}
+
 function resetSearch(): void {
   query.value = "";
   results.value = [];
@@ -160,6 +167,7 @@ async function playLink(): Promise<void> {
               type="search"
               :placeholder="t('searchPlaceholder')"
               class="w-full rounded-xl border border-white/5 bg-[#14141c] py-2.5 pl-9 pr-8 text-sm outline-none placeholder:text-neutral-600 focus:border-green-500/40"
+              @input="onQueryInput"
             />
             <button
               v-if="query"

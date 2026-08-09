@@ -45,6 +45,7 @@ export interface DeviceDTO {
   name: string;
   online: boolean;
   type: string;
+  macAddress?: string | null;
 }
 
 export interface PlaylistDTO {
@@ -119,6 +120,11 @@ export const api = {
   previous: (deviceId: string) => request(`/devices/${deviceId}/previous`, { method: "POST", body: "{}" }),
   volume: (deviceId: string, volume: number) =>
     request(`/devices/${deviceId}/volume`, { method: "POST", body: JSON.stringify({ volume }) }),
+  transfer: (from: string, to: string) =>
+    request(`/devices/${from}/transfer`, { method: "POST", body: JSON.stringify({ to }) }),
+  setDeviceMac: (deviceId: string, macAddress: string) =>
+    request(`/devices/${deviceId}`, { method: "PUT", body: JSON.stringify({ macAddress }) }),
+  wake: (deviceId: string) => request(`/devices/${deviceId}/wake`, { method: "POST", body: "{}" }),
 
   playPlaylist: (deviceId: string, playlistId: string) =>
     request<{ queued: number; first: TrackDTO | null }>(`/devices/${deviceId}/playlist`, {

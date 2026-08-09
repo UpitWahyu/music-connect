@@ -1,13 +1,41 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { api } from "../lib/api";
-import { store, refreshState } from "../composables/useMusic";
+import { store, refreshState, refreshAll, refreshDevices } from "../composables/useMusic";
 import { formatDuration } from "../lib/format";
 
 const pb = computed(() => store.playback);
 const isPlaying = computed(() => pb.value?.state === "playing");
 const track = computed(() => pb.value?.track ?? null);
 const volume = computed(() => pb.value?.volume ?? 70);
+const otherDevices = computed(() => store.devices.filter((d) => d.id !== store.selectedDevice));
+const thisDevice = computed(() => store.devices.find((d) => d.id === store.selectedDevice) ?? null);
+
+const macInput = ref("");
+const wakeMsg = ref("");
+
+/** Remote wake-up via MikroTik (Phase 9) — for offline devices with a MAC set. */
+async function wake(): Promise<void> {
+  if (!store.selectedDevice) return;
+  try {
+    await api.wake(store.selectedDevice);
+    wakeMsg.value = "⚡ Magic packet terkirim — PC menyala dalam beberapa detik";
+  } catch (e) {
+    wakeMsg.value = `❌ ${(e as Error).message}`;
+  }
+}
+
+async function saveMac(): Promise<void> {
+  if (!store.selectedDevice || !macInput.value.trim()) return;
+  try {
+    await api.setDeviceMac(store.selectedDevice, macInput.value.trim());
+    macInput.value = "";
+    wakeMsg.value = "✅ MAC tersimpan";
+    await refreshDevices();
+  } catch (e) {
+    wakeMsg.value = `❌ ${(e as Error).message}`;
+  }
+}
 
 async function cmd(fn: () => Promise<unknown>): Promise<void> {
   if (!store.selectedDevice) return;
@@ -28,6 +56,18 @@ function changeVolume(e: Event): void {
   const v = Number((e.target as HTMLInputElement).value);
   if (!store.selectedDevice) return;
   void cmd(() => api.volume(store.selectedDevice!, v));
+}
+
+/** Device handoff (PRD §26, Phase 7): position carries over, target keeps its volume. */
+async function transferTo(e: Event): Promise<void> {
+  const to = (e.target as HTMLSelectElement).value;
+  if (!store.selectedDevice || !to) return;
+  try {
+    await api.transfer(store.selectedDevice, to);
+  } catch {
+    // target offline etc
+  }
+  await refreshAll();
 }
 </script>
 
@@ -77,6 +117,34 @@ function changeVolume(e: Event): void {
         @input="changeVolume"
       />
       <span class="w-8 text-right text-xs text-gray-400">{{ volume }}</span>
+    </div>
+
+    <div v-if="otherDevices.length" class="mt-3 flex items-center justify-center gap-2 text-xs">
+      <span class="text-gray-500">⇄ Pindahkan ke:</span>
+      <select class="rounded-lg border border-gray-700 bg-gray-900 px-2 py-1" @change="transferTo">
+        <option value="" selected disabled>pilih device…</option>
+        <option v-for="d in otherDevices" :key="d.id" :value="d.id">
+          {{ d.name || d.id }} {{ d.online ? "🟢" : "⚪" }}
+        </option>
+      </select>
+    </div>
+
+    <div v-if="thisDevice && !thisDevice.online" class="mt-3 rounded-lg bg-gray-900 p-2 text-center text-xs">
+      <p class="mb-1 text-gray-400">{{ thisDevice.name || thisDevice.id }} sedang offline</p>
+      <template v-if="thisDevice.macAddress">
+        <button class="rounded bg-amber-500/80 px-3 py-1 font-semibold text-black hover:bg-amber-400" @click="wake">
+          ⚡ Wake (WOL)
+        </button>
+      </template>
+      <template v-else>
+        <input
+          v-model="macInput"
+          placeholder="MAC: 00:D8:61:BD:87:DD"
+          class="mr-1 w-44 rounded bg-gray-800 px-2 py-1 text-xs outline-none"
+        />
+        <button class="rounded bg-gray-600 px-2 py-1 hover:bg-gray-500" @click="saveMac">Simpan</button>
+      </template>
+      <p v-if="wakeMsg" class="mt-1 text-gray-400">{{ wakeMsg }}</p>
     </div>
   </section>
 </template>

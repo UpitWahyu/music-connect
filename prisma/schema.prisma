@@ -28,15 +28,16 @@ model User {
 }
 
 model Device {
-  id        String    @id
-  name      String
-  type      String    @default("unknown")
-  tokenHash String    @unique
-  lastSeen  DateTime?
-  online    Boolean   @default(false)
-  volume    Int       @default(70)
-  userId    String?
-  user      User?     @relation(fields: [userId], references: [id])
+  id          String    @id
+  name        String
+  type        String    @default("unknown")
+  tokenHash   String    @unique
+  macAddress  String? // for remote wake-up (Phase 9, WOL via MikroTik)
+  lastSeen    DateTime?
+  online      Boolean   @default(false)
+  volume      Int       @default(70)
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -155,7 +155,7 @@ export class PlaybackService {
       this.requireOnline(sendToPlayer(to, { type: "player.play" }));
       await autoQueueService.ensure(to, state.track.id);
     }
-    await this.patchState(to, { state: "playing", position: state.position, queueIndex: state.queueIndex });
+    await this.patchState(to, { state: "playing", track: state.track, position: state.position, queueIndex: state.queueIndex });
     this.requireOnline(sendToPlayer(from, { type: "player.stop" }));
     await this.patchState(from, { state: "stopped", position: 0 });
   }

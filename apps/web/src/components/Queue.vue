@@ -43,12 +43,34 @@ async function onDrop(itemId: string, e: DragEvent): Promise<void> {
   if (i < 0 || j < 0 || !store.selectedDevice) return;
   const moved = arr.splice(i, 1)[0];
   if (!moved) return;
-  arr.splice(j, 0, moved);
+  arr.splice(j, 0, moved); // insert BEFORE the target — the green line shows where
   store.queue = arr; // optimistic UI
   try {
     await api.reorderQueue(store.selectedDevice, arr.map((x) => x.id));
   } catch {
     // server rejected — refetch authoritative order
+  }
+  void refreshQueue();
+}
+
+/** Drop on the empty zone under the list → move to the very end. */
+async function onDropEnd(e: DragEvent): Promise<void> {
+  e.preventDefault();
+  const from = dragId.value;
+  dragId.value = null;
+  dragOverId.value = null;
+  if (!from || !store.selectedDevice) return;
+  const arr = [...store.queue];
+  const i = arr.findIndex((x) => x.id === from);
+  if (i < 0 || i === arr.length - 1) return;
+  const moved = arr.splice(i, 1)[0];
+  if (!moved) return;
+  arr.push(moved);
+  store.queue = arr;
+  try {
+    await api.reorderQueue(store.selectedDevice, arr.map((x) => x.id));
+  } catch {
+    // refetch on failure
   }
   void refreshQueue();
 }
@@ -141,7 +163,7 @@ async function togglePlaylist(playlistId: string): Promise<void> {
         v-for="(item, i) in store.queue"
         :key="item.id"
         class="relative flex cursor-grab items-center gap-3 py-2 text-sm transition active:cursor-grabbing"
-        :class="dragOverId === item.id ? 'rounded-lg bg-white/5 ring-1 ring-green-500/60' : 'hover:bg-white/5'"
+        :class="dragOverId === item.id ? 'border-t-2 border-green-500' : 'border-t border-transparent hover:bg-white/5'"
         draggable="true"
         @dragstart="onDragStart(item.id, $event)"
         @dragover="onDragOver(item.id, $event)"
@@ -225,6 +247,15 @@ async function togglePlaylist(playlistId: string): Promise<void> {
         </div>
       </li>
     </ul>
-    <p v-else class="py-4 text-center text-sm text-neutral-500">{{ t("queueEmpty") }}</p>
+    <!-- drop zone under the list: move to the very end -->
+    <div
+      v-if="store.queue.length > 1 && dragId"
+      class="mt-2 rounded-lg border border-dashed border-white/15 py-2.5 text-center text-xs text-neutral-500"
+      @dragover.prevent
+      @drop="onDropEnd"
+    >
+      {{ t("moveToEnd") }}
+    </div>
+    <p v-else-if="!store.queue.length" class="py-4 text-center text-sm text-neutral-500">{{ t("queueEmpty") }}</p>
   </section>
 </template>

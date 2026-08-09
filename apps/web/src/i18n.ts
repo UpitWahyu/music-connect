@@ -76,6 +76,11 @@ const dict: Record<Lang, Dict> = {
     // misc
     invalidLink: "Link tidak valid — harus berisi ?list=… (YouTube/YouTube Music)",
     selectDeviceFirst: "Pilih device dulu di panel ⋯",
+    // history
+    historyTitle: "Riwayat Putar",
+    clearAll: "Hapus semua",
+    clearAllTitle: "Hapus semua riwayat",
+    historyEmpty: "Belum ada riwayat — mulai putar sesuatu",
   },
   en: {
     "tab.search": "Search",
@@ -140,6 +145,10 @@ const dict: Record<Lang, Dict> = {
     macPlaceholder: "MAC: 00:D8:61:BD:87:DD",
     invalidLink: "Invalid link — must contain ?list=… (YouTube/YouTube Music)",
     selectDeviceFirst: "Select a device first in the ⋯ panel",
+    historyTitle: "Play History",
+    clearAll: "Clear all",
+    clearAllTitle: "Clear all history",
+    historyEmpty: "No history yet — start playing something",
   },
 };
 

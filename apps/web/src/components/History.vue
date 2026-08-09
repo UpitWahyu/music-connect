@@ -3,6 +3,7 @@ import { onMounted, ref } from "vue";
 import { Clock, Play, Trash2 } from "lucide-vue-next";
 import { api, type HistoryDTO } from "../lib/api";
 import { store, refreshState } from "../composables/useMusic";
+import { t, i18n } from "../i18n";
 
 const history = ref<HistoryDTO[]>([]);
 
@@ -35,16 +36,16 @@ onMounted(load);
     <div class="mb-2 flex items-center justify-between">
       <h2 class="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">
         <Clock :size="14" />
-        Riwayat Putar
+        {{ t("historyTitle") }}
       </h2>
       <button
         v-if="history.length"
         class="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-neutral-500 transition hover:bg-white/10 hover:text-red-400"
-        title="Hapus semua riwayat"
+        :title="t('clearAllTitle')"
         @click="clearAll"
       >
         <Trash2 :size="12" />
-        Hapus semua
+        {{ t("clearAll") }}
       </button>
     </div>
     <ul v-if="history.length" class="divide-y divide-white/5">
@@ -52,7 +53,7 @@ onMounted(load);
         <div class="min-w-0 flex-1">
           <div class="truncate font-medium">{{ h.title }}</div>
           <div class="truncate text-xs text-neutral-500">
-            {{ h.artist }} · {{ new Date(h.playedAt).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) }}
+            {{ h.artist }} · {{ new Date(h.playedAt).toLocaleString(i18n.lang === "id" ? "id-ID" : "en-US", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) }}
           </div>
         </div>
         <button
@@ -64,7 +65,7 @@ onMounted(load);
       </li>
     </ul>
     <p v-else class="py-3 text-center text-sm text-neutral-500">
-      Belum ada riwayat — mulai putar sesuatu
+      {{ t("historyEmpty") }}
     </p>
   </section>
 </template>

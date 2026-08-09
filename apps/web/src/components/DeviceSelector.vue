@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
-import { store, refreshDevices, selectDevice } from "../composables/useMusic";
+import { store, refreshDevices, selectDeviceAuto } from "../composables/useMusic";
 
 onMounted(() => {
   void refreshDevices();
@@ -9,7 +9,7 @@ onMounted(() => {
 const selected = computed({
   get: () => store.selectedDevice ?? "",
   set: (v: string) => {
-    if (v) void selectDevice(v);
+    if (v && v !== store.selectedDevice) void selectDeviceAuto(v);
   },
 });
 

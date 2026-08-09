@@ -35,6 +35,14 @@ export function logout(): void {
 
 export async function refreshDevices(): Promise<void> {
   store.devices = await api.devices();
+  // Auto-select: when nothing is selected (or the selection vanished),
+  // pick the first online device (Spotify-like "play here" behaviour).
+  const cur = store.devices.find((d) => d.id === store.selectedDevice);
+  if ((!store.selectedDevice || !cur) && store.devices.length) {
+    const online = store.devices.find((d) => d.online) ?? store.devices[0];
+    store.selectedDevice = online.id;
+    await Promise.all([refreshQueue(), refreshState()]);
+  }
 }
 
 export async function refreshPlaylists(): Promise<void> {
@@ -44,6 +52,23 @@ export async function refreshPlaylists(): Promise<void> {
 export async function selectDevice(id: string): Promise<void> {
   store.selectedDevice = id;
   await refreshAll();
+}
+
+/**
+ * Select a device. When switching to a different *online* device, playback is
+ * auto-transferred there (old device stops, track + position move with it).
+ */
+export async function selectDeviceAuto(id: string): Promise<void> {
+  const from = store.selectedDevice;
+  const target = store.devices.find((d) => d.id === id);
+  if (from && from !== id && target?.online) {
+    try {
+      await api.transfer(from, id); // stop old, load + seek on new (D-10)
+    } catch {
+      // old device offline or transfer failed — plain switch instead
+    }
+  }
+  await selectDevice(id);
 }
 
 export async function refreshQueue(): Promise<void> {
@@ -67,6 +92,7 @@ export function startPolling(): void {
   if (pollTimer) return;
   pollTimer = setInterval(() => {
     void refreshAll();
+    void refreshDevices(); // keep device list fresh (auto-select when online appears)
   }, 3000);
 }
 

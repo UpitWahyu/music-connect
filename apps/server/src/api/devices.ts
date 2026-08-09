@@ -43,7 +43,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   /** Player flow: submit the pairing code, receive { deviceId, token }. */
   app.post(
     "/api/player/pair",
-    { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
+    { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
     async (req, reply) => {
       const body = (req.body ?? {}) as { pairingCode?: string; name?: string; type?: string };
       if (!body.pairingCode) return reply.code(400).send({ error: "MISSING_PAIRING_CODE" });

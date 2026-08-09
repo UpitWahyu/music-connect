@@ -36,19 +36,41 @@ export class QueueService {
   }
 
   /**
-   * Read-modify-write with optimistic concurrency control (WATCH/MULTI).
-   * Retries on conflict; throws QUEUE_CONFLICT after giving up.
+   * Read-modify-write with a per-key distributed lock (SET NX + TTL).
+   * ioredis WATCH does not apply to multi() transactions (separate pipeline
+   * connection), so a lock is the reliable way to serialize mutations.
+   * Lock release is token-checked (Lua) so a stale release can't unlock
+   * someone else's critical section. Retries on contention.
    */
+  private static RELEASE_LUA = `
+    if redis.call('get', KEYS[1]) == ARGV[1] then
+      return redis.call('del', KEYS[1])
+    else
+      return 0
+    end
+  `;
+
   private async mutate(deviceId: string, fn: (q: QueueItem[]) => QueueItem[]): Promise<QueueItem[]> {
     const owner = await this.ownerOf(deviceId);
     const key = this.keyOf(owner);
-    for (let attempt = 0; attempt < 5; attempt++) {
-      await redis.watch(key);
-      const queue = await this.get(deviceId);
-      const next = fn(queue);
-      const res = await redis.multi().set(key, JSON.stringify(next)).exec();
-      if (res) return next;
-      // watched key changed under us — retry
+    const lockKey = `${key}:lock`;
+    const token = randomUUID();
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const acquired = await redis.set(lockKey, token, "EX", 5, "NX");
+      if (acquired) {
+        try {
+          const queue = await this.get(deviceId);
+          const next = fn(queue);
+          await redis.set(key, JSON.stringify(next));
+          return next;
+        } finally {
+          await redis
+            .eval(QueueService.RELEASE_LUA, 1, lockKey, token)
+            .catch(() => null);
+        }
+      }
+      // backoff: 5, 7, 9, … capped — long enough for many contenders
+      await new Promise((r) => setTimeout(r, Math.min(5 + attempt * 2, 100)));
     }
     throw new Error("QUEUE_CONFLICT");
   }

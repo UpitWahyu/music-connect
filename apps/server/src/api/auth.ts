@@ -36,7 +36,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     "/api/auth/login",
     {
-      config: { rateLimit: { max: 5, timeWindow: "1 minute" } }, // D-10
+      config: { rateLimit: { max: 10, timeWindow: "1 minute" } }, // D-10
     },
     async (req, reply) => {
       const { username, password } = (req.body ?? {}) as { username?: string; password?: string };

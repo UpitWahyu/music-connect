@@ -12,12 +12,14 @@
     "dev:web": "pnpm --filter @music-connect/web dev",
     "db:generate": "prisma generate --schema prisma/schema.prisma",
     "db:push": "prisma db push --schema prisma/schema.prisma",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "tsx scripts/seed.ts",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "prisma": "^7.9.1",
     "tsx": "^4.23.11",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
   }
 }

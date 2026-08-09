@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { ListMusic, Music2, Play, Sparkles } from "lucide-vue-next";
-import { api } from "../lib/api";
-import { store, refreshQueue, refreshState } from "../composables/useMusic";
+import { computed, ref } from "vue";
+import { ListMusic, Music2, Play, Sparkles, Heart, FolderPlus } from "lucide-vue-next";
+import { api, type QueueItemDTO } from "../lib/api";
+import { store, refreshQueue, refreshState, refreshPlaylists } from "../composables/useMusic";
 import { formatDuration } from "../lib/format";
 
 const playingIndex = computed(() => store.queueIndex);
@@ -18,36 +18,18 @@ async function playItem(itemId: string): Promise<void> {
   }
 }
 
-// --- sort (commits a new order via reorder API) ---
-const sort = ref<"default" | "title" | "artist" | "duration">("default");
-let baseOrder: string[] = [];
+// --- favorite / save to playlist (same actions as search results) ---
+async function favorite(item: QueueItemDTO): Promise<void> {
+  await api.addFavorite(item.track).catch(() => null);
+}
 
-onMounted(() => {
-  baseOrder = store.queue.map((i) => i.id);
-});
+const saveFor = ref<QueueItemDTO | null>(null);
 
-async function changeSort(): Promise<void> {
-  if (!store.selectedDevice || !store.queue.length) return;
-  const q = [...store.queue];
-  if (sort.value === "title") q.sort((a, b) => a.track.title.localeCompare(b.track.title));
-  else if (sort.value === "artist") q.sort((a, b) => a.track.artist.localeCompare(b.track.artist));
-  else if (sort.value === "duration") q.sort((a, b) => (a.track.duration || 0) - (b.track.duration || 0));
-  else if (baseOrder.length === q.length) {
-    // back to the original order captured on mount
-    const byId = new Map(q.map((i) => [i.id, i]));
-    const restored: typeof q = [];
-    for (const id of baseOrder) {
-      const it = byId.get(id);
-      if (it) restored.push(it);
-    }
-    q.splice(0, q.length, ...restored);
-  }
-  try {
-    await api.reorderQueue(store.selectedDevice, q.map((i) => i.id));
-    await refreshQueue();
-  } catch {
-    // order mismatch etc
-  }
+async function saveToPlaylist(playlistId: string): Promise<void> {
+  if (!saveFor.value) return;
+  await api.addToPlaylist(playlistId, saveFor.value.track).catch(() => null);
+  saveFor.value = null;
+  await refreshPlaylists();
 }
 </script>
 
@@ -59,24 +41,13 @@ async function changeSort(): Promise<void> {
         Antrian
         <span class="text-neutral-600">({{ store.queue.length }})</span>
       </h2>
-      <select
-        v-model="sort"
-        class="rounded-lg border border-white/5 bg-black/30 px-2 py-1 text-xs outline-none"
-        title="Urutkan antrian"
-        @change="changeSort"
-      >
-        <option value="default">Urutan asli</option>
-        <option value="title">Judul A–Z</option>
-        <option value="artist">Artis A–Z</option>
-        <option value="duration">Durasi</option>
-      </select>
     </div>
 
     <ul v-if="store.queue.length" class="divide-y divide-white/5">
       <li
         v-for="(item, i) in store.queue"
         :key="item.id"
-        class="group flex items-center gap-3 py-2 text-sm transition hover:bg-white/5"
+        class="relative flex items-center gap-3 py-2 text-sm transition hover:bg-white/5"
       >
         <button
           class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition"
@@ -98,6 +69,40 @@ async function changeSort(): Promise<void> {
           auto
         </span>
         <span class="shrink-0 text-xs text-neutral-600">{{ formatDuration(item.track.duration) }}</span>
+        <div class="flex shrink-0 items-center gap-0.5">
+          <button
+            class="rounded-lg p-1.5 text-neutral-500 transition hover:bg-white/10 hover:text-red-400"
+            title="Tambah ke favorit"
+            @click="favorite(item)"
+          >
+            <Heart :size="13" />
+          </button>
+          <button
+            class="rounded-lg p-1.5 text-neutral-500 transition hover:bg-white/10 hover:text-white"
+            title="Simpan ke playlist"
+            @click="saveFor = saveFor?.id === item.id ? null : item"
+          >
+            <FolderPlus :size="13" />
+          </button>
+        </div>
+
+        <!-- playlist picker (opens upward so the player bar never covers it) -->
+        <div
+          v-if="saveFor?.id === item.id"
+          class="absolute bottom-full right-0 z-10 mb-1 w-52 rounded-xl border border-white/10 bg-[#1c1c26] p-2 shadow-2xl shadow-black/60"
+        >
+          <div v-if="store.playlists.length" class="flex max-h-48 flex-wrap gap-1 overflow-y-auto">
+            <button
+              v-for="p in store.playlists"
+              :key="p.id"
+              class="rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-medium transition hover:bg-green-500 hover:text-black"
+              @click="saveToPlaylist(p.id)"
+            >
+              {{ p.name }}
+            </button>
+          </div>
+          <p v-else class="text-xs text-neutral-500">Belum ada playlist — buat di tab Playlist</p>
+        </div>
       </li>
     </ul>
     <p v-else class="py-4 text-center text-sm text-neutral-500">Antrian kosong</p>

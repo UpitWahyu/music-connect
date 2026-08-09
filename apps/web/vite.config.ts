@@ -16,7 +16,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     preview: {
-      port: 4180,
+      port: 3018,
       // production preview proxy → music server (PM2 sets PREVIEW_TARGET)
       proxy: {
         "/api": process.env.PREVIEW_TARGET ?? "http://localhost:3019",

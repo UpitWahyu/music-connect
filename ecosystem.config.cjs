@@ -29,7 +29,7 @@ module.exports = {
       name: "music-web",
       cwd: path.join(__dirname, "apps/web"),
       script: "node_modules/vite/bin/vite.js",
-      args: "preview --host 0.0.0.0 --port 4180",
+      args: "preview --host 0.0.0.0 --port 3018",
       env: { ...env, PREVIEW_TARGET: "http://localhost:3019" },
       max_memory_restart: "200M",
       time: true,

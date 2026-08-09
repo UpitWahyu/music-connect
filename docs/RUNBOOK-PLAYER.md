@@ -17,7 +17,7 @@ Web / Phone ──wss──▶ YOUR_SERVER ──▶ server :3019 ──command�
 | Linux | 20+ | 9+ | `apt install mpv` | `apt install yt-dlp` |
 | Windows | 20+ | 9+ | `winget install mpv` | `winget install yt-dlp` |
 | macOS | 20+ | 9+ | `brew install mpv` | `brew install yt-dlp` |
-| Android (Termux) | `pkg install nodejs` | `pkg install pnpm` | `pkg install mpv` | `pkg install yt-dlp` |
+| Android (Termux) | `pkg install nodejs-lts` | `npm i -g corepack@latest && corepack enable pnpm` | `pkg install mpv` | `pkg install yt-dlp` |
 
 > mpv 0.35+ has yt-dlp *built in*; install yt-dlp separately if YouTube
 > resolution fails. On Termux, audio can be grabbed by other apps — run

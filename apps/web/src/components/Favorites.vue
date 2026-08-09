@@ -3,6 +3,7 @@ import { onMounted } from "vue";
 import { Heart, Play, X } from "lucide-vue-next";
 import { api } from "../lib/api";
 import { store, refreshFavorites, refreshState } from "../composables/useMusic";
+import { showToast } from "../composables/useToast";
 
 async function playTrack(trackId: string, title: string, artist: string): Promise<void> {
   if (!store.selectedDevice) return;
@@ -19,6 +20,7 @@ async function playTrack(trackId: string, title: string, artist: string): Promis
 async function unfavorite(trackId: string): Promise<void> {
   await api.removeFavorite(trackId);
   await refreshFavorites();
+  showToast("Dihapus dari favorit");
 }
 
 onMounted(() => {

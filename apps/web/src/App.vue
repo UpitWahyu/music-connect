@@ -9,6 +9,7 @@ import Queue from "./components/Queue.vue";
 import Playlists from "./components/Playlists.vue";
 import Favorites from "./components/Favorites.vue";
 import History from "./components/History.vue";
+import Toast from "./components/Toast.vue";
 
 type Tab = "search" | "playlists" | "favorites" | "history";
 const tab = ref<Tab>("search");
@@ -76,4 +77,7 @@ onUnmounted(stopPolling);
 
   <!-- player bar: flat, stuck to the bottom (Spotify style) -->
   <Player />
+
+  <!-- toast notifications -->
+  <Toast />
 </template>

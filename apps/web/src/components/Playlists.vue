@@ -3,6 +3,7 @@ import { onMounted, ref } from "vue";
 import { FolderOpen, Play, Trash2, X } from "lucide-vue-next";
 import { api, type PlaylistTrackDTO } from "../lib/api";
 import { store, refreshPlaylists, refreshQueue, refreshState } from "../composables/useMusic";
+import { showToast } from "../composables/useToast";
 import { formatDuration } from "../lib/format";
 
 // refresh whenever the tab is opened — the login-time fetch may not have
@@ -25,6 +26,7 @@ async function create(): Promise<void> {
     await api.createPlaylist(name.value.trim());
     name.value = "";
     msg.value = "Playlist dibuat";
+    showToast("Playlist dibuat");
     await refreshPlaylists();
   } catch (e) {
     msg.value = `Gagal: ${(e as Error).message}`;
@@ -56,6 +58,7 @@ async function playPlaylist(id: string): Promise<void> {
 
 async function removePlaylist(id: string): Promise<void> {
   await api.deletePlaylist(id);
+  showToast("Playlist dihapus");
   if (openId.value === id) {
     openId.value = null;
     detail.value = null;

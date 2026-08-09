@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { Search as SearchIcon, Play, Plus, Heart, FolderPlus, X, Link2 } from "lucide-vue-next";
 import { api, type TrackDTO } from "../lib/api";
 import { store, refreshQueue, refreshState, refreshPlaylists } from "../composables/useMusic";
+import { showToast } from "../composables/useToast";
 import { formatDuration } from "../lib/format";
 
 // --- modal visibility ---
@@ -45,10 +46,12 @@ async function addToQueue(track: TrackDTO): Promise<void> {
   if (!store.selectedDevice) return;
   await api.addToQueue(store.selectedDevice, track);
   await refreshQueue();
+  showToast("Ditambahkan ke queue");
 }
 
 async function favorite(track: TrackDTO): Promise<void> {
   await api.addFavorite(track);
+  showToast("Ditambahkan ke favorit");
 }
 
 const saveFor = ref<TrackDTO | null>(null);
@@ -61,9 +64,11 @@ async function toggleSaveFor(t: TrackDTO): Promise<void> {
 
 async function saveToPlaylist(playlistId: string): Promise<void> {
   if (!saveFor.value) return;
+  const plName = store.playlists.find((p) => p.id === playlistId)?.name ?? "playlist";
   await api.addToPlaylist(playlistId, saveFor.value);
   saveFor.value = null;
   await refreshPlaylists();
+  showToast(`Ditambahkan ke ${plName}`);
 }
 
 // --- playlist link modal ---
@@ -89,11 +94,12 @@ async function playLink(): Promise<void> {
   }
   linkBusy.value = true;
   try {
-    await api.playPlaylist(store.selectedDevice, listId);
+    const r = await api.playPlaylist(store.selectedDevice, listId);
     showLink.value = false;
     linkUrl.value = "";
     await refreshQueue();
     await refreshState();
+    showToast(`${r.queued} lagu masuk queue`);
   } catch (e) {
     linkError.value = "Gagal memuat playlist: " + ((e as Error).message || "coba lagi");
   } finally {

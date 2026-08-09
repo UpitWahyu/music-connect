@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import { ListMusic, Music2, Play, Sparkles, Heart, FolderPlus, ChevronUp, ChevronDown } from "lucide-vue-next";
 import { api, type QueueItemDTO } from "../lib/api";
 import { store, refreshQueue, refreshState, refreshPlaylists, refreshFavorites } from "../composables/useMusic";
+import { showToast } from "../composables/useToast";
 import { formatDuration } from "../lib/format";
 
 // --- drag & drop reorder (native HTML5; optimistic + server commit) ---
@@ -89,9 +90,11 @@ function isFav(trackId: string): boolean {
 }
 
 async function toggleFavorite(item: QueueItemDTO): Promise<void> {
-  if (isFav(item.track.id)) await api.removeFavorite(item.track.id).catch(() => null);
+  const wasFav = isFav(item.track.id);
+  if (wasFav) await api.removeFavorite(item.track.id).catch(() => null);
   else await api.addFavorite(item.track).catch(() => null);
   await refreshFavorites();
+  showToast(wasFav ? "Dihapus dari favorit" : "Ditambahkan ke favorit");
 }
 
 const saveFor = ref<QueueItemDTO | null>(null);
@@ -109,13 +112,16 @@ async function openPlaylistPicker(item: QueueItemDTO): Promise<void> {
 /** Toggle: add to the playlist, or remove when already contained. */
 async function togglePlaylist(playlistId: string): Promise<void> {
   if (!saveFor.value) return;
-  if (containsMap.value[playlistId]) {
+  const wasIn = containsMap.value[playlistId];
+  const plName = store.playlists.find((p) => p.id === playlistId)?.name ?? "playlist";
+  if (wasIn) {
     await api.removeFromPlaylist(playlistId, saveFor.value.track.id).catch(() => null);
   } else {
     await api.addToPlaylist(playlistId, saveFor.value.track).catch(() => null);
   }
-  containsMap.value = { ...containsMap.value, [playlistId]: !containsMap.value[playlistId] };
+  containsMap.value = { ...containsMap.value, [playlistId]: !wasIn };
   await refreshPlaylists();
+  showToast(wasIn ? `Dihapus dari ${plName}` : `Ditambahkan ke ${plName}`);
 }
 </script>
 

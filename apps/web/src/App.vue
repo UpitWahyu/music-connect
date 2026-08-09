@@ -34,7 +34,7 @@ onUnmounted(stopPolling);
 <template>
   <Login v-if="!store.authed" />
 
-  <div v-else class="mx-auto min-h-screen max-w-md px-4 pb-36 pt-6">
+  <div v-else class="mx-auto min-h-screen max-w-md px-4 pb-44 pt-6">
     <header class="mb-5 flex items-center justify-between">
       <div class="flex items-center gap-2.5">
         <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-green-500 text-black shadow-lg shadow-green-500/20">
@@ -42,16 +42,13 @@ onUnmounted(stopPolling);
         </div>
         <h1 class="text-lg font-bold tracking-tight">Music Connect</h1>
       </div>
-      <div class="flex items-center gap-2">
-        <DeviceSelector />
-        <button
-          class="rounded-lg p-2 text-neutral-400 transition hover:bg-white/5 hover:text-white"
-          title="Logout"
-          @click="logout"
-        >
-          <LogOut :size="16" />
-        </button>
-      </div>
+      <button
+        class="rounded-lg p-2 text-neutral-400 transition hover:bg-white/5 hover:text-white"
+        title="Logout"
+        @click="logout"
+      >
+        <LogOut :size="16" />
+      </button>
     </header>
 
     <nav v-if="store.selectedDevice" class="mb-4 flex gap-1 rounded-xl bg-[#14141c] p-1">
@@ -78,6 +75,21 @@ onUnmounted(stopPolling);
     <p v-else class="mt-24 text-center text-sm text-neutral-500">
       Pilih device untuk mulai mendengarkan
     </p>
+  </div>
+
+  <!-- device selection bar (bottom, above the player bar) -->
+  <div
+    v-if="store.selectedDevice"
+    class="fixed inset-x-0 bottom-[4.25rem] z-40 border-t border-white/5 bg-[#101019]/95 backdrop-blur"
+  >
+    <div class="mx-auto flex max-w-md items-center justify-between gap-3 px-4 py-2">
+      <span class="text-xs font-medium uppercase tracking-wider text-neutral-500">
+        Memutar di
+      </span>
+      <div class="w-52">
+        <DeviceSelector />
+      </div>
+    </div>
   </div>
 
   <!-- player bar: flat, stuck to the bottom (Spotify style) -->

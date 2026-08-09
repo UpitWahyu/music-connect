@@ -11,6 +11,7 @@ export class PlayerState {
 
   status: PlaybackStatus = "stopped";
   position = 0;
+  duration = 0; // authoritative duration, synced from mpv
   volume = 70;
   queueIndex = 0;
 
@@ -18,6 +19,7 @@ export class PlayerState {
     this.trackId = trackId;
     this.media = media;
     this.position = 0;
+    this.duration = 0;
     this.status = "playing";
   }
 
@@ -31,6 +33,7 @@ export class PlayerState {
       status: this.status,
       trackId: this.trackId,
       position: this.position,
+      duration: this.duration,
       volume: this.volume,
       queueIndex: this.queueIndex,
       updatedAt: now,

@@ -170,7 +170,12 @@ export class PlaybackService {
   /** Player-reported state (D-08): player owns position; server keeps queue authority. */
   async applyPlayerReport(deviceId: string, report: PlayerStateReport): Promise<void> {
     const cur = (await this.getState(deviceId)) ?? EMPTY_STATE(deviceId);
-    const track = cur.track && cur.track.id === report.trackId ? cur.track : null;
+    let track = cur.track && cur.track.id === report.trackId ? cur.track : null;
+    // authoritative duration from mpv fixes 0:00 (oEmbed tracks have no duration)
+    if (track && report.duration && report.duration > 0 && track.duration !== report.duration) {
+      track = { ...track, duration: report.duration };
+      if (report.trackId) await queueService.updateTrackDuration(deviceId, report.trackId, report.duration);
+    }
     await this.patchState(deviceId, {
       state: report.status,
       position: report.position,

@@ -15,6 +15,7 @@ export interface PlayerStateReport {
   status: PlaybackStatus;
   trackId: string | null;
   position: number;
+  duration?: number; // actual track duration from mpv — fixes 0:00 for oEmbed tracks
   volume: number;
   queueIndex: number;
   updatedAt: number;

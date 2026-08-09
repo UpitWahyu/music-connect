@@ -45,6 +45,16 @@ export class QueueService {
     return this.set(deviceId, []);
   }
 
+  /** Player-reported authoritative duration (D-08) — fixes 0:00 tracks. */
+  async updateTrackDuration(deviceId: string, trackId: string, duration: number): Promise<void> {
+    const queue = await this.get(deviceId);
+    const item = queue.find((i) => i.track.id === trackId);
+    if (item && item.track.duration !== duration) {
+      item.track.duration = duration;
+      await this.set(deviceId, queue);
+    }
+  }
+
   // --- current position (server-authoritative, D-08) ---
 
   async getIndex(deviceId: string): Promise<number> {

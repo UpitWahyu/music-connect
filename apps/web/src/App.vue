@@ -4,7 +4,6 @@ import { Music, Search as SearchIcon, FolderOpen, Heart, History as HistoryIcon,
 import { store, refreshDevices, startPolling, stopPolling, logout } from "./composables/useMusic";
 import Login from "./components/Login.vue";
 import Search from "./components/Search.vue";
-import PlaylistPlay from "./components/PlaylistPlay.vue";
 import Player from "./components/Player.vue";
 import Queue from "./components/Queue.vue";
 import Playlists from "./components/Playlists.vue";
@@ -65,7 +64,6 @@ onUnmounted(stopPolling);
 
     <div v-if="store.selectedDevice">
       <Search v-if="tab === 'search'" />
-      <PlaylistPlay v-if="tab === 'search'" />
       <Playlists v-if="tab === 'playlists'" />
       <Favorites v-if="tab === 'favorites'" />
       <History v-if="tab === 'history'" />

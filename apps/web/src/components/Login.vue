@@ -2,6 +2,7 @@
 import { ref } from "vue";
 import { Music, LogIn } from "lucide-vue-next";
 import { login } from "../composables/useMusic";
+import { t } from "../i18n";
 
 const username = ref("admin");
 const password = ref("");
@@ -36,14 +37,14 @@ async function submit(): Promise<void> {
       </div>
       <input
         v-model="username"
-        placeholder="Username"
+        :placeholder="t('username')"
         autocomplete="username"
         class="mb-2 w-full rounded-lg border border-white/5 bg-black/30 px-3 py-2.5 text-sm outline-none placeholder:text-neutral-600 focus:border-green-500/50"
       />
       <input
         v-model="password"
         type="password"
-        placeholder="Password"
+        :placeholder="t('password')"
         autocomplete="current-password"
         class="mb-4 w-full rounded-lg border border-white/5 bg-black/30 px-3 py-2.5 text-sm outline-none placeholder:text-neutral-600 focus:border-green-500/50"
       />
@@ -54,7 +55,7 @@ async function submit(): Promise<void> {
         class="flex w-full items-center justify-center gap-2 rounded-lg bg-green-500 py-2.5 text-sm font-semibold text-black transition hover:bg-green-400 disabled:opacity-50"
       >
         <LogIn :size="16" />
-        {{ busy ? "Masuk..." : "Login" }}
+        {{ busy ? t("loginBusy") : t("login") }}
       </button>
     </form>
   </div>

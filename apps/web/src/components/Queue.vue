@@ -4,6 +4,7 @@ import { ListMusic, Music2, Play, Sparkles, Heart, FolderPlus, ChevronUp, Chevro
 import { api, type QueueItemDTO } from "../lib/api";
 import { store, refreshQueue, refreshState, refreshPlaylists, refreshFavorites } from "../composables/useMusic";
 import { showToast } from "../composables/useToast";
+import { t } from "../i18n";
 import { formatDuration } from "../lib/format";
 
 // --- drag & drop reorder (native HTML5; optimistic + server commit) ---
@@ -94,7 +95,7 @@ async function toggleFavorite(item: QueueItemDTO): Promise<void> {
   if (wasFav) await api.removeFavorite(item.track.id).catch(() => null);
   else await api.addFavorite(item.track).catch(() => null);
   await refreshFavorites();
-  showToast(wasFav ? "Dihapus dari favorit" : "Ditambahkan ke favorit");
+  showToast(wasFav ? t("removedFromFav") : t("addedToFav"));
 }
 
 const saveFor = ref<QueueItemDTO | null>(null);
@@ -121,16 +122,16 @@ async function togglePlaylist(playlistId: string): Promise<void> {
   }
   containsMap.value = { ...containsMap.value, [playlistId]: !wasIn };
   await refreshPlaylists();
-  showToast(wasIn ? `Dihapus dari ${plName}` : `Ditambahkan ke ${plName}`);
+  showToast(wasIn ? t("removedFromPlaylist", { name: plName }) : t("addedToPlaylist", { name: plName }));
 }
 </script>
 
 <template>
   <section class="rounded-2xl border border-white/5 bg-[#14141c] p-4">
     <div class="mb-2 flex items-center justify-between">
-      <h2 class="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+      <h2 class="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">
         <ListMusic :size="14" />
-        Antrian
+        {{ t("queue") }}
         <span class="text-neutral-600">({{ store.queue.length }})</span>
       </h2>
     </div>
@@ -168,7 +169,7 @@ async function togglePlaylist(playlistId: string): Promise<void> {
         <button
           class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition"
           :class="i === playingIndex ? 'bg-green-500 text-black' : 'bg-white/10 text-neutral-300 hover:bg-green-500 hover:text-black'"
-          :title="i === playingIndex ? 'Sedang diputar — klik untuk ulang' : 'Putar sekarang'"
+          :title="i === playingIndex ? t('nowPlaying') : t('playNow')"
           @click="playItem(item.id)"
         >
           <Play v-if="i !== playingIndex" :size="12" class="ml-0.5" />
@@ -180,23 +181,23 @@ async function togglePlaylist(playlistId: string): Promise<void> {
           </div>
           <div class="truncate text-xs text-neutral-500">{{ item.track.artist }}</div>
         </div>
-        <span v-if="item.addedBy === 'auto'" class="flex shrink-0 items-center gap-1 rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-neutral-400" title="Rekomendasi otomatis">
+        <span v-if="item.addedBy === 'auto'" class="flex shrink-0 items-center gap-1 rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-neutral-400" title="auto">
           <Sparkles :size="9" />
-          auto
+          {{ t("auto") }}
         </span>
         <span class="shrink-0 text-xs text-neutral-600">{{ formatDuration(item.track.duration) }}</span>
         <div class="flex shrink-0 items-center gap-0.5">
           <button
             class="rounded-lg p-1.5 transition"
             :class="isFav(item.track.id) ? 'text-red-500' : 'text-neutral-500 hover:bg-white/10 hover:text-red-400'"
-            :title="isFav(item.track.id) ? 'Hapus dari favorit' : 'Tambah ke favorit'"
+            :title="isFav(item.track.id) ? t('removeFavorite') : t('addFavorite')"
             @click="toggleFavorite(item)"
           >
             <Heart :size="13" :fill="isFav(item.track.id) ? 'currentColor' : 'none'" />
           </button>
           <button
             class="rounded-lg p-1.5 text-neutral-500 transition hover:bg-white/10 hover:text-white"
-            :title="saveFor?.id === item.id ? 'Tutup' : 'Simpan ke playlist'"
+            :title="saveFor?.id === item.id ? t('close') : t('saveToPlaylist')"
             @click="openPlaylistPicker(item)"
           >
             <FolderPlus :size="13" />
@@ -220,10 +221,10 @@ async function togglePlaylist(playlistId: string): Promise<void> {
               {{ p.name }}{{ containsMap[p.id] ? " ✓" : "" }}
             </button>
           </div>
-          <p v-else class="text-xs text-neutral-500">Belum ada playlist — buat di tab Playlist</p>
+          <p v-else class="text-xs text-neutral-500">{{ t("noPlaylists") }}</p>
         </div>
       </li>
     </ul>
-    <p v-else class="py-4 text-center text-sm text-neutral-500">Antrian kosong</p>
+    <p v-else class="py-4 text-center text-sm text-neutral-500">{{ t("queueEmpty") }}</p>
   </section>
 </template>

@@ -4,6 +4,7 @@ import { Search as SearchIcon, Play, Plus, Heart, FolderPlus, X, Link2 } from "l
 import { api, type TrackDTO } from "../lib/api";
 import { store, refreshQueue, refreshState, refreshPlaylists } from "../composables/useMusic";
 import { showToast } from "../composables/useToast";
+import { t, i18n } from "../i18n";
 import { formatDuration } from "../lib/format";
 
 // --- modal visibility ---
@@ -46,12 +47,12 @@ async function addToQueue(track: TrackDTO): Promise<void> {
   if (!store.selectedDevice) return;
   await api.addToQueue(store.selectedDevice, track);
   await refreshQueue();
-  showToast("Ditambahkan ke queue");
+  showToast(t("addedToQueue"));
 }
 
 async function favorite(track: TrackDTO): Promise<void> {
   await api.addFavorite(track);
-  showToast("Ditambahkan ke favorit");
+  showToast(t("addedToFav"));
 }
 
 const saveFor = ref<TrackDTO | null>(null);
@@ -68,7 +69,7 @@ async function saveToPlaylist(playlistId: string): Promise<void> {
   await api.addToPlaylist(playlistId, saveFor.value);
   saveFor.value = null;
   await refreshPlaylists();
-  showToast(`Ditambahkan ke ${plName}`);
+  showToast(t("addedToPlaylist", { name: plName }));
 }
 
 // --- playlist link modal ---
@@ -84,12 +85,12 @@ function parseListId(url: string): string | null {
 async function playLink(): Promise<void> {
   linkError.value = "";
   if (!store.selectedDevice) {
-    linkError.value = "Pilih device dulu di panel ⋯";
+    linkError.value = t("selectDeviceFirst");
     return;
   }
   const listId = parseListId(linkUrl.value.trim());
   if (!listId) {
-    linkError.value = "Link tidak valid — harus berisi ?list=… (YouTube/YouTube Music)";
+    linkError.value = t("invalidLink");
     return;
   }
   linkBusy.value = true;
@@ -99,7 +100,7 @@ async function playLink(): Promise<void> {
     linkUrl.value = "";
     await refreshQueue();
     await refreshState();
-    showToast(`${r.queued} lagu masuk queue`);
+    showToast(`${r.queued} ${i18n.lang === "id" ? "lagu masuk queue" : "songs queued"}`);
   } catch (e) {
     linkError.value = "Gagal memuat playlist: " + ((e as Error).message || "coba lagi");
   } finally {
@@ -119,7 +120,7 @@ async function playLink(): Promise<void> {
         <span class="flex h-11 w-11 items-center justify-center rounded-xl bg-green-500/15 text-green-400">
           <SearchIcon :size="19" />
         </span>
-        <span class="text-sm font-medium">Cari Lagu</span>
+        <span class="text-sm font-medium">{{ t("searchSong") }}</span>
       </button>
       <button
         class="flex flex-col items-center gap-2.5 rounded-2xl border border-white/5 bg-[#14141c] py-6 transition hover:border-green-500/30 hover:bg-[#16161f]"
@@ -128,7 +129,7 @@ async function playLink(): Promise<void> {
         <span class="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-neutral-300">
           <Link2 :size="19" />
         </span>
-        <span class="text-sm font-medium">Playlist dari Link</span>
+        <span class="text-sm font-medium">{{ t("playlistFromLink") }}</span>
       </button>
     </div>
 
@@ -144,7 +145,7 @@ async function playLink(): Promise<void> {
         <div class="flex items-center justify-between border-b border-white/5 p-4">
           <h3 class="flex items-center gap-2 text-sm font-semibold">
             <SearchIcon :size="15" class="text-green-400" />
-            Cari Lagu
+            {{ t("searchSong") }}
           </h3>
           <button type="button" class="rounded-lg p-1.5 text-neutral-400 transition hover:bg-white/10 hover:text-white" @click="closeSearch">
             <X :size="15" />
@@ -157,7 +158,7 @@ async function playLink(): Promise<void> {
             <input
               v-model="query"
               type="search"
-              placeholder="Lagu atau artis…"
+              :placeholder="t('searchPlaceholder')"
               class="w-full rounded-xl border border-white/5 bg-[#14141c] py-2.5 pl-9 pr-8 text-sm outline-none placeholder:text-neutral-600 focus:border-green-500/40"
             />
             <button
@@ -174,7 +175,7 @@ async function playLink(): Promise<void> {
             :disabled="busy"
             class="rounded-xl bg-white/10 px-4 text-sm font-medium transition hover:bg-white/15 disabled:opacity-50"
           >
-            {{ busy ? "…" : "Cari" }}
+            {{ busy ? "…" : t("search") }}
           </button>
         </form>
 
@@ -238,7 +239,7 @@ async function playLink(): Promise<void> {
             </li>
           </ul>
           <p v-else class="py-10 text-center text-sm text-neutral-500">
-            {{ busy ? "Mencari…" : query ? "Tidak ada hasil" : "Ketik judul lagu atau nama artis" }}
+            {{ busy ? "…" : query ? t("noResults") : t("searchHint") }}
           </p>
         </div>
       </div>
@@ -254,7 +255,7 @@ async function playLink(): Promise<void> {
         <div class="mb-3 flex items-center justify-between">
           <h3 class="flex items-center gap-2 text-sm font-semibold">
             <Link2 :size="15" class="text-green-400" />
-            Putar Playlist dari Link
+            {{ t("playLinkTitle") }}
           </h3>
           <button type="button" class="rounded-lg p-1.5 text-neutral-400 transition hover:bg-white/10 hover:text-white" @click="showLink = false">
             <X :size="15" />
@@ -263,7 +264,7 @@ async function playLink(): Promise<void> {
         <input
           v-model="linkUrl"
           type="url"
-          placeholder="https://music.youtube.com/playlist?list=…"
+          :placeholder="t('linkPlaceholder')"
           class="w-full rounded-xl border border-white/5 bg-[#14141c] px-3 py-2.5 text-sm outline-none placeholder:text-neutral-600 focus:border-green-500/40"
           @keyup.enter="playLink"
         />
@@ -274,10 +275,10 @@ async function playLink(): Promise<void> {
             :disabled="linkBusy || !linkUrl.trim()"
             @click="playLink"
           >
-            {{ linkBusy ? "Memuat…" : "Mainkan" }}
+            {{ linkBusy ? t("loading") : t("play") }}
           </button>
           <button type="button" class="rounded-xl bg-white/10 px-4 text-sm transition hover:bg-white/15" @click="showLink = false">
-            Batal
+            {{ t("cancel") }}
           </button>
         </div>
       </div>

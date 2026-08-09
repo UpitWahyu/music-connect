@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, ref } from "vue";
 import { Music, Search as SearchIcon, FolderOpen, Heart, History as HistoryIcon, LogOut, CircleUser, Settings as SettingsIcon } from "lucide-vue-next";
 import { store, refreshDevices, startPolling, stopPolling, logout } from "./composables/useMusic";
+import { t } from "./i18n";
 import Login from "./components/Login.vue";
 import Search from "./components/Search.vue";
 import Player from "./components/Player.vue";
@@ -42,10 +43,10 @@ onUnmounted(() => {
 });
 
 const tabs: Array<{ id: Tab; label: string; icon: typeof SearchIcon }> = [
-  { id: "search", label: "Cari", icon: SearchIcon },
-  { id: "playlists", label: "Playlist", icon: FolderOpen },
-  { id: "favorites", label: "Favorit", icon: Heart },
-  { id: "history", label: "Riwayat", icon: HistoryIcon },
+  { id: "search", label: t("tab.search"), icon: SearchIcon },
+  { id: "playlists", label: t("tab.playlists"), icon: FolderOpen },
+  { id: "favorites", label: t("tab.favorites"), icon: Heart },
+  { id: "history", label: t("tab.history"), icon: HistoryIcon },
 ];
 </script>
 
@@ -79,7 +80,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof SearchIcon }> = [
             @click="openSettings"
           >
             <SettingsIcon :size="14" class="text-neutral-500" />
-            Pengaturan
+            {{ t("settings") }}
           </button>
           <button
             type="button"
@@ -87,7 +88,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof SearchIcon }> = [
             @click="logout"
           >
             <LogOut :size="14" />
-            Logout
+            {{ t("logout") }}
           </button>
         </div>
       </div>
@@ -114,7 +115,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof SearchIcon }> = [
       <Queue v-if="tab !== 'history'" class="mt-6" />
     </div>
     <p v-else class="mt-24 text-center text-sm text-neutral-500">
-      Pilih device untuk mulai mendengarkan
+      {{ t("selectDeviceHint") }}
     </p>
   </div>
 

@@ -14,6 +14,7 @@ import {
 import { api } from "../lib/api";
 import { store, refreshState, refreshDevices, refreshFavorites, refreshPlaylists } from "../composables/useMusic";
 import { showToast } from "../composables/useToast";
+import { t, i18n } from "../i18n";
 import { formatDuration } from "../lib/format";
 import DeviceSelector from "./DeviceSelector.vue";
 
@@ -72,9 +73,9 @@ async function wake(): Promise<void> {
   if (!store.selectedDevice) return;
   try {
     await api.wake(store.selectedDevice);
-    showToast("Wake signal terkirim");
+    showToast(i18n.lang === "id" ? "Wake signal terkirim" : "Wake signal sent");
   } catch (e) {
-    showToast(`Gagal: ${(e as Error).message}`, "error");
+    showToast(`${i18n.lang === "id" ? "Gagal: " : "Failed: "}${(e as Error).message}`, "error");
   }
 }
 
@@ -211,7 +212,7 @@ async function saveMac(): Promise<void> {
       <div class="mx-auto max-w-md space-y-3 px-4 py-3 text-sm">
         <div class="flex items-center justify-between gap-3">
           <span class="shrink-0 text-xs font-medium uppercase tracking-wider text-neutral-500">
-            Memutar di
+            {{ t("playingOn") }}
           </span>
           <div class="w-48">
             <DeviceSelector />
@@ -222,20 +223,20 @@ async function saveMac(): Promise<void> {
         <div v-if="track" class="relative border-t border-white/5 pt-3">
           <div class="flex items-center justify-between gap-3">
             <span class="shrink-0 text-xs font-medium uppercase tracking-wider text-neutral-500">
-              Simpan lagu
+              {{ t("saveTrack") }}
             </span>
             <div class="flex items-center gap-1">
               <button
                 class="rounded-lg p-2 transition"
                 :class="isFav ? 'text-red-500' : 'text-neutral-400 hover:bg-white/10 hover:text-red-400'"
-                :title="isFav ? 'Hapus dari favorit' : 'Tambah ke favorit'"
+                :title="isFav ? t('removeFavorite') : t('addFavorite')"
                 @click="toggleFav"
               >
                 <Heart :size="15" :fill="isFav ? 'currentColor' : 'none'" />
               </button>
               <button
                 class="rounded-lg p-2 text-neutral-400 transition hover:bg-white/10 hover:text-white"
-                :title="showSavePanel ? 'Tutup' : 'Simpan ke playlist'"
+                :title="showSavePanel ? t('close') : t('saveToPlaylist')"
                 @click="toggleSavePanel"
               >
                 <FolderPlus :size="15" />
@@ -254,13 +255,13 @@ async function saveMac(): Promise<void> {
                 :key="p.id"
                 class="rounded-lg px-2.5 py-1.5 text-xs font-medium transition"
                 :class="containsMap[p.id] ? 'bg-green-500 text-black' : 'bg-white/10 hover:bg-green-500 hover:text-black'"
-                :title="containsMap[p.id] ? 'Hapus dari playlist' : 'Tambah ke playlist'"
+                :title="containsMap[p.id] ? t('removeFavorite') : t('saveToPlaylist')"
                 @click="togglePlaylist(p.id)"
               >
                 {{ p.name }}{{ containsMap[p.id] ? " ✓" : "" }}
               </button>
             </div>
-            <p v-else class="text-xs text-neutral-500">Belum ada playlist — buat di tab Playlist</p>
+            <p v-else class="text-xs text-neutral-500">{{ t("noPlaylists") }}</p>
           </div>
         </div>
 
@@ -285,14 +286,14 @@ async function saveMac(): Promise<void> {
               @click="wake"
             >
               <Power :size="13" />
-              Wake (WOL)
+              {{ t("wake") }}
             </button>
           </template>
           <template v-else>
             <div class="flex items-center gap-2">
               <input
                 v-model="macInput"
-                placeholder="MAC: 00:D8:61:BD:87:DD"
+                :placeholder="t('macPlaceholder')"
                 class="w-44 rounded bg-black/40 px-2 py-1.5 text-xs outline-none"
               />
               <button class="rounded-lg bg-white/10 px-3.5 py-1.5 transition hover:bg-white/15" @click="saveMac">

@@ -53,7 +53,9 @@ export class Mpv extends EventEmitter {
       this.sock = sock;
       this.buf = "";
       this.attach(sock);
-      void this.observeProperties();
+      void this.observeProperties().catch(() => {
+        // property observation is best-effort — never crash on it
+      });
       this.emit("connected");
     });
     sock.on("error", () => {

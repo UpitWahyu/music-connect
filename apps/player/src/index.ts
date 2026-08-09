@@ -9,6 +9,15 @@ const state = new PlayerState();
 const mpv = new Mpv(config.mpvSocket);
 mpv.start();
 
+// The player agent is a long-running process — a failed mpv/IPC interaction
+// must never take it down. Log and keep going.
+process.on("unhandledRejection", (reason) => {
+  console.error("[player] unhandled rejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[player] uncaught exception:", err instanceof Error ? err.message : err);
+});
+
 // Pairing (PRD §10): on first run the user supplies PAIRING_CODE from the web
 // UI. The returned device token is stored in ~/.config/music-player/.
 let credentials = loadCredentials();
@@ -31,7 +40,10 @@ conn.on("ready", () => {
   conn.send({ type: "player.state", report: state.toReport(credentials.deviceId) });
 });
 conn.on("command", (cmd) => {
-  void handleCommand(cmd);
+  void handleCommand(cmd).catch((e) => {
+    // a failed mpv command must never kill the player agent
+    console.error("[player] command failed:", cmd.type, e instanceof Error ? e.message : e);
+  });
 });
 conn.connect();
 

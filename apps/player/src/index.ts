@@ -63,7 +63,9 @@ mpv.on("error", (err) => {
 });
 
 async function pair(cfg: PlayerConfig, code: string): Promise<{ deviceId: string; token: string }> {
-  const httpUrl = cfg.serverUrl.replace(/^ws/, "http");
+  // HTTP base = origin only — serverUrl may carry a WS path (e.g. /ws/player)
+  const u = new URL(cfg.serverUrl);
+  const httpUrl = `${u.protocol === "wss:" ? "https" : "http"}://${u.host}`;
   const res = await fetch(`${httpUrl}/api/player/pair`, {
     method: "POST",
     headers: { "content-type": "application/json" },

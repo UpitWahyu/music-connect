@@ -100,6 +100,7 @@ const containsMap = ref<Record<string, boolean>>({});
 async function openPlaylistPicker(item: QueueItemDTO): Promise<void> {
   saveFor.value = saveFor.value?.id === item.id ? null : item;
   if (saveFor.value) {
+    await refreshPlaylists(); // ensure the list is loaded (login may have missed it)
     const r = await api.playlistsWithTrack(item.track.id).catch(() => null);
     containsMap.value = Object.fromEntries((r?.playlists ?? []).map((p) => [p.id, p.contains]));
   }

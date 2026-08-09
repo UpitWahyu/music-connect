@@ -43,6 +43,12 @@ async function favorite(track: TrackDTO): Promise<void> {
   await api.addFavorite(track);
 }
 
+/** Toggle playlist picker — refresh the list first (login may not have loaded it). */
+async function toggleSaveFor(t: TrackDTO): Promise<void> {
+  saveFor.value = saveFor.value?.id === t.id ? null : t;
+  if (saveFor.value) await refreshPlaylists();
+}
+
 async function saveToPlaylist(playlistId: string): Promise<void> {
   if (!saveFor.value) return;
   await api.addToPlaylist(playlistId, saveFor.value);
@@ -120,7 +126,7 @@ async function saveToPlaylist(playlistId: string): Promise<void> {
           <button
             class="rounded-lg p-1.5 text-neutral-400 transition hover:bg-white/10 hover:text-white"
             title="Simpan ke playlist"
-            @click="saveFor = saveFor?.id === t.id ? null : t"
+            @click="toggleSaveFor(t)"
           >
             <FolderPlus :size="14" />
           </button>

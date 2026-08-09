@@ -165,9 +165,35 @@ export class Mpv extends EventEmitter {
   }
 
   async load(url: string, position?: number): Promise<void> {
-    await this.command(["loadfile", url, "replace"]);
-    if (position && position > 0) await this.command(["seek", position, "absolute"]);
+    // mpv may be busy (a previous load still resolving) — retry before giving up
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await this.command(["loadfile", url, "replace"]);
+        lastErr = undefined;
+        break;
+      } catch (e) {
+        lastErr = e;
+        await new Promise((r) => setTimeout(r, 1200));
+      }
+    }
+    if (lastErr) throw lastErr as Error;
+    // seeking while the demuxer is still loading → "error running command"
+    if (position && position > 0) {
+      await this.waitLoaded(10000);
+      await this.command(["seek", position, "absolute"]).catch(() => null);
+    }
     this.state.idle = false;
+  }
+
+  /** Resolve once mpv has finished loading the file (property file-loaded). */
+  private async waitLoaded(timeoutMs: number): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const loaded = await this.command(["get_property", "file-loaded"]).catch(() => true);
+      if (loaded === true) return;
+      await new Promise((r) => setTimeout(r, 200));
+    }
   }
 
   async play(): Promise<void> {

@@ -37,6 +37,14 @@ export class DeviceService {
     await redis.hset(RedisKeys.deviceMeta(deviceId), "volume", volume);
     await prisma.device.update({ where: { id: deviceId }, data: { volume } }).catch(() => null);
   }
+
+  /** Stored volume for a device (Redis meta, falling back to the DB row). */
+  async getVolume(deviceId: string): Promise<number> {
+    const v = await redis.hget(RedisKeys.deviceMeta(deviceId), "volume");
+    if (v !== null) return Number(v);
+    const dev = await prisma.device.findUnique({ where: { id: deviceId }, select: { volume: true } });
+    return dev?.volume ?? 70;
+  }
 }
 
 export const deviceService = new DeviceService();

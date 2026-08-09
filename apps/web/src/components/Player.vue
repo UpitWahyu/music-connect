@@ -6,19 +6,16 @@ import {
   SkipBack,
   SkipForward,
   Volume2,
-  ArrowRightLeft,
   Power,
   MoreHorizontal,
-  ChevronDown,
 } from "lucide-vue-next";
 import { api } from "../lib/api";
-import { store, refreshState, refreshAll, refreshDevices } from "../composables/useMusic";
+import { store, refreshState, refreshDevices } from "../composables/useMusic";
 import { formatDuration } from "../lib/format";
 
 const pb = computed(() => store.playback);
 const isPlaying = computed(() => pb.value?.state === "playing");
 const track = computed(() => pb.value?.track ?? null);
-const otherDevices = computed(() => store.devices.filter((d) => d.id !== store.selectedDevice));
 const thisDevice = computed(() => store.devices.find((d) => d.id === store.selectedDevice) ?? null);
 /** Another online device currently able to play (for offline-selection hints). */
 const activeOtherDevice = computed(
@@ -65,17 +62,6 @@ async function cmd(fn: () => Promise<unknown>): Promise<void> {
 function togglePlay(): void {
   if (!store.selectedDevice) return;
   void cmd(() => (isPlaying.value ? api.pause(store.selectedDevice!) : api.resume(store.selectedDevice!)));
-}
-
-async function transferTo(e: Event): Promise<void> {
-  const to = (e.target as HTMLSelectElement).value;
-  if (!store.selectedDevice || !to) return;
-  try {
-    await api.transfer(store.selectedDevice, to);
-  } catch {
-    // target offline etc
-  }
-  await refreshAll();
 }
 
 async function wake(): Promise<void> {
@@ -184,17 +170,6 @@ async function saveMac(): Promise<void> {
             @input="volumeInput"
           />
           <span class="w-8 shrink-0 text-right text-xs text-neutral-500">{{ volumeLocal }}</span>
-        </div>
-
-        <div v-if="otherDevices.length" class="flex items-center gap-2">
-          <ArrowRightLeft :size="15" class="shrink-0 text-neutral-500" />
-          <span class="shrink-0 text-neutral-500">Pindahkan ke:</span>
-          <select class="w-full bg-transparent outline-none" @change="transferTo">
-            <option value="" selected disabled>pilih device…</option>
-            <option v-for="d in otherDevices" :key="d.id" :value="d.id">
-              {{ d.name || d.id }}{{ d.online ? "" : " (offline)" }}
-            </option>
-          </select>
         </div>
 
         <div v-if="thisDevice && !thisDevice.online" class="rounded-lg bg-black/30 p-2.5 text-center text-xs">

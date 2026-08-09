@@ -73,6 +73,10 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
             registerPlayer(id, s);
             await deviceService.markOnline(id);
             s.send(JSON.stringify({ type: "player.ready" }));
+            // sync the stored per-device volume right after connect — mpv
+            // defaults to 100% and would otherwise report/stay that way
+            const vol = await deviceService.getVolume(id);
+            s.send(JSON.stringify({ type: "player.setVolume", volume: vol }));
           })();
         } else {
           s.close(4401, "AUTH_FIRST");

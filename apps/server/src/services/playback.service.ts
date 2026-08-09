@@ -158,8 +158,9 @@ export class PlaybackService {
     const state = await this.getState(from);
     if (!state?.track) throw new Error("NOTHING_TO_TRANSFER"); // never clobber the target's state
     const media: MediaRef = { mode: "id", youtubeId: state.track.id };
+    const volume = await deviceService.getVolume(to); // D-10: target keeps its own volume
     this.requireOnline(
-      sendToPlayer(to, { type: "player.load", trackId: state.track.id, media, position: state.position }),
+      sendToPlayer(to, { type: "player.load", trackId: state.track.id, media, position: state.position, volume }),
     );
     this.requireOnline(sendToPlayer(to, { type: "player.play" }));
     await autoQueueService.ensure(to, state.track.id);
@@ -199,7 +200,8 @@ export class PlaybackService {
 
   private async loadTrack(deviceId: string, item: QueueItem): Promise<void> {
     const media: MediaRef = { mode: "id", youtubeId: item.track.id };
-    this.requireOnline(sendToPlayer(deviceId, { type: "player.load", trackId: item.track.id, media }));
+    const volume = await deviceService.getVolume(deviceId);
+    this.requireOnline(sendToPlayer(deviceId, { type: "player.load", trackId: item.track.id, media, volume }));
     this.requireOnline(sendToPlayer(deviceId, { type: "player.play" }));
     await this.patchState(deviceId, {
       state: "playing",

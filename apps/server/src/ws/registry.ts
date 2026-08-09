@@ -1,4 +1,5 @@
 import type { PlayerCommand, ServerEvent } from "@music-connect/protocol";
+import { setGauge } from "../metrics.js";
 
 /**
  * Live connection registry. Structural socket type keeps this package free
@@ -24,6 +25,7 @@ export function sendToPlayer(deviceId: string, msg: PlayerCommand): boolean {
 
 export function registerPlayer(deviceId: string, socket: SocketLike): void {
   players.set(deviceId, socket);
+  setGauge("music_active_players", players.size);
 }
 
 /**
@@ -32,7 +34,10 @@ export function registerPlayer(deviceId: string, socket: SocketLike): void {
  * a reconnect race.
  */
 export function unregisterPlayer(deviceId: string, socket: SocketLike): void {
-  if (players.get(deviceId) === socket) players.delete(deviceId);
+  if (players.get(deviceId) === socket) {
+    players.delete(deviceId);
+    setGauge("music_active_players", players.size);
+  }
 }
 
 /** Live presence — source of truth for the device list (Redis set can go stale). */
@@ -43,10 +48,17 @@ export function isPlayerRegistered(deviceId: string): boolean {
 
 export function addController(socket: SocketLike): void {
   controllers.add(socket);
+  setGauge("music_active_controllers", controllers.size);
 }
 
 export function removeController(socket: SocketLike): void {
   controllers.delete(socket);
+  setGauge("music_active_controllers", controllers.size);
+}
+
+/** Live player count (metrics + debugging). */
+export function activePlayerCount(): number {
+  return players.size;
 }
 
 export function broadcastToControllers(event: ServerEvent): void {

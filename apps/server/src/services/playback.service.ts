@@ -3,6 +3,7 @@ import type { PlaybackState, QueueItem, Track } from "@music-connect/types";
 import { RedisKeys } from "@music-connect/shared";
 import { redis } from "../redis/client.js";
 import { prisma } from "../db/prisma.js";
+import { incCounter } from "../metrics.js";
 import { sendToPlayer } from "../ws/registry.js";
 import { deviceService } from "./device.service.js";
 import { queueService } from "./queue.service.js";
@@ -30,6 +31,7 @@ export class PlaybackService {
   private lastLoadAt = new Map<string, number>();
 
   async play(deviceId: string, trackId?: string, track?: Track): Promise<void> {
+    incCounter("music_playback_commands_total");
     if (trackId) {
       const item = await queueService.placeCurrent(deviceId, trackId);
       if (item) {
@@ -58,27 +60,32 @@ export class PlaybackService {
   }
 
   async pause(deviceId: string): Promise<void> {
+    incCounter("music_playback_commands_total");
     this.requireOnline(sendToPlayer(deviceId, { type: "player.pause" }));
     await this.patchState(deviceId, { state: "paused" });
   }
 
   async resume(deviceId: string): Promise<void> {
+    incCounter("music_playback_commands_total");
     this.requireOnline(sendToPlayer(deviceId, { type: "player.resume" }));
     await this.patchState(deviceId, { state: "playing" });
   }
 
   async seek(deviceId: string, position: number): Promise<void> {
+    incCounter("music_playback_commands_total");
     this.requireOnline(sendToPlayer(deviceId, { type: "player.seek", position }));
     await this.patchState(deviceId, { position });
   }
 
   async setVolume(deviceId: string, volume: number): Promise<void> {
+    incCounter("music_playback_commands_total");
     this.requireOnline(sendToPlayer(deviceId, { type: "player.setVolume", volume }));
     await deviceService.setVolume(deviceId, volume);
     await this.patchState(deviceId, { volume });
   }
 
   async stop(deviceId: string): Promise<void> {
+    incCounter("music_playback_commands_total");
     this.requireOnline(sendToPlayer(deviceId, { type: "player.stop" }));
     await this.patchState(deviceId, { state: "stopped", position: 0 });
   }
@@ -88,6 +95,7 @@ export class PlaybackService {
    * if the queue is exhausted it refills from recommendations first (§25, auto-queue).
    */
   async next(deviceId: string): Promise<void> {
+    incCounter("music_playback_commands_total");
     let item = await queueService.advance(deviceId);
     if (!item) {
       const state = await this.getState(deviceId);
@@ -104,6 +112,7 @@ export class PlaybackService {
   }
 
   async previous(deviceId: string): Promise<void> {
+    incCounter("music_playback_commands_total");
     const index = await queueService.getIndex(deviceId);
     if (index > 0) {
       await queueService.setIndex(deviceId, index - 1);
@@ -117,6 +126,7 @@ export class PlaybackService {
 
   /** Player → server: track finished (PRD §25). */
   async onTrackEnded(deviceId: string): Promise<void> {
+    incCounter("music_playback_commands_total");
     // anti-loop: ignore if the track was replaced less than 3s ago (a
     // stale end-file from the previous track must not skip the new one)
     const last = this.lastLoadAt.get(deviceId) ?? 0;
@@ -129,6 +139,7 @@ export class PlaybackService {
    * and starts the first one (Spotify semantics). Returns the queued count.
    */
   async playPlaylist(deviceId: string, playlistId: string): Promise<{ queued: number; first: Track | null }> {
+    incCounter("music_playback_commands_total");
     const playlist = await musicService.getPlaylist(playlistId);
     if (!playlist || playlist.tracks.length === 0) throw new Error("PLAYLIST_NOT_FOUND");
     return this.playTracks(deviceId, playlist.tracks);
@@ -136,6 +147,7 @@ export class PlaybackService {
 
   /** Replace the queue with the given tracks and start the first one. */
   async playTracks(deviceId: string, tracks: Track[]): Promise<{ queued: number; first: Track | null }> {
+    incCounter("music_playback_commands_total");
     if (tracks.length === 0) throw new Error("PLAYLIST_NOT_FOUND");
 
     await queueService.clear(deviceId);
@@ -155,6 +167,7 @@ export class PlaybackService {
    * device keeps its own volume.
    */
   async transfer(from: string, to: string): Promise<void> {
+    incCounter("music_playback_commands_total");
     const state = await this.getState(from);
     if (!state?.track) throw new Error("NOTHING_TO_TRANSFER"); // never clobber the target's state
     const media: MediaRef = { mode: "id", youtubeId: state.track.id };

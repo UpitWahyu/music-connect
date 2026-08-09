@@ -17,7 +17,11 @@ let controllerToken: string;
 
 const USER = "test-e2e-user";
 const DEVICE = "test-device-e2e";
+const DEVICE_B = "test-device-e2e-b";
+const DEVICE_C = "test-device-e2e-c";
 const DEV_TOKEN = "devtoken123";
+const DEV_TOKEN_B = "devtoken123-b";
+const DEV_TOKEN_C = "devtoken123-c";
 
 /** Minimal fake mpv agent speaking the real WS protocol. */
 class FakePlayer {
@@ -110,6 +114,16 @@ beforeAll(async () => {
     update: { userId: null, name: "QA E2E", tokenHash: sha256(DEV_TOKEN) },
     create: { id: DEVICE, name: "QA E2E", type: "qa", tokenHash: sha256(DEV_TOKEN) },
   });
+  for (const [id, tok] of [
+    [DEVICE_B, DEV_TOKEN_B],
+    [DEVICE_C, DEV_TOKEN_C],
+  ] as const) {
+    await prisma.device.upsert({
+      where: { id },
+      update: { userId: null, name: `QA E2E ${id}`, tokenHash: sha256(tok) },
+      create: { id, name: `QA E2E ${id}`, type: "qa", tokenHash: sha256(tok) },
+    });
+  }
   app = await buildApp();
   await app.listen({ port: 0, host: "127.0.0.1" });
   port = (app.server.address() as AddressInfo).port;
@@ -125,7 +139,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await prisma.device.deleteMany({ where: { id: DEVICE } }).catch(() => null);
+  await prisma.device.deleteMany({ where: { id: { in: [DEVICE, DEVICE_B, DEVICE_C] } } }).catch(() => null);
   await prisma.user.deleteMany({ where: { id: USER } }).catch(() => null);
   await app.close();
   redis.disconnect(); // synchronous — no unhandled rejections from late WS handlers
@@ -270,5 +284,78 @@ describe("player registry / reconnect", () => {
     // b must still own the registry entry → online stays true
     expect((await deviceService.list()).find((d) => d.id === DEVICE)?.online).toBe(true);
     b.close();
+  });
+});
+
+describe("handoff (device transfer)", () => {
+  it("transfers the current track + position to an online device", async () => {
+    const a = new FakePlayer(url());
+    await a.opened;
+    await a.auth(DEVICE, DEV_TOKEN);
+    await a.next("player.ready");
+    await a.next("player.setVolume");
+    const b = new FakePlayer(url());
+    await b.opened;
+    await b.auth(DEVICE_B, DEV_TOKEN_B);
+    await b.next("player.ready");
+    await b.next("player.setVolume");
+
+    // play on A, report position 77
+    await api("POST", `/api/devices/${DEVICE}/play`, { trackId: "H1", track: track("H1") });
+    await a.next("player.load");
+    a.report({ trackId: "H1", status: "playing", position: 77, queueIndex: 0 });
+    await new Promise((r) => setTimeout(r, 300));
+
+    const tr = await api("POST", `/api/devices/${DEVICE}/transfer`, { to: DEVICE_B });
+    expect(tr.statusCode).toBe(200);
+
+    // B gets load with the carried position + play; A gets stop
+    const bLoad = (await b.next("player.load")) as { trackId: string; position: number };
+    expect(bLoad.trackId).toBe("H1");
+    expect(bLoad.position).toBeCloseTo(77, 0);
+    await b.next("player.play");
+    await a.next("player.stop");
+
+    await new Promise((r) => setTimeout(r, 300));
+    const stB = JSON.parse((await api("GET", `/api/devices/${DEVICE_B}/state`)).body).state;
+    expect(stB.track?.id).toBe("H1");
+    expect(stB.state).toBe("playing");
+    const stA = JSON.parse((await api("GET", `/api/devices/${DEVICE}/state`)).body).state;
+    expect(stA.state).toBe("stopped");
+    a.close();
+    b.close();
+  });
+
+  it("transfer to an offline device is rejected (source keeps playing)", async () => {
+    const a = new FakePlayer(url());
+    await a.opened;
+    await a.auth(DEVICE, DEV_TOKEN);
+    await a.next("player.ready");
+    await a.next("player.setVolume");
+    await api("POST", `/api/devices/${DEVICE}/play`, { trackId: "H2", track: track("H2") });
+    await a.next("player.load");
+    a.report({ trackId: "H2", status: "playing", position: 10, queueIndex: 0 });
+    await new Promise((r) => setTimeout(r, 300));
+
+    // DEVICE_C never connects → PLAYER_OFFLINE, source untouched
+    const res = await api("POST", `/api/devices/${DEVICE}/transfer`, { to: DEVICE_C });
+    expect(res.statusCode).toBe(409);
+
+    await new Promise((r) => setTimeout(r, 200));
+    const stA = JSON.parse((await api("GET", `/api/devices/${DEVICE}/state`)).body).state;
+    expect(stA.track?.id).toBe("H2");
+    expect(stA.state).toBe("playing");
+    a.close();
+  });
+});
+
+describe("metrics", () => {
+  it("GET /metrics is public and exposes Prometheus text", async () => {
+    const res = await app.inject({ method: "GET", url: "/metrics" }); // no auth
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/plain");
+    const body = res.body;
+    expect(body).toContain("# TYPE music_ws_connections_total counter");
+    expect(body).toMatch(/music_active_players \d+/);
   });
 });

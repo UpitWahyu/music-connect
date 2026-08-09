@@ -11,6 +11,7 @@ import {
   unregisterPlayer,
   type SocketLike,
 } from "./registry.js";
+import { incCounter } from "../metrics.js";
 
 /**
  * WebSocket gateway (PRD §21-§22).
@@ -25,6 +26,7 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
   app.get("/ws/controller", { websocket: true }, (socket) => {
     const s = socket as unknown as SocketLike;
     let authed = false;
+    incCounter("music_ws_connections_total");
 
     s.on("message", (raw) => {
       const msg = JSON.parse(String(raw)) as Record<string, unknown>;
@@ -52,6 +54,7 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
   app.get("/ws/player", { websocket: true }, (socket) => {
     const s = socket as unknown as SocketLike;
     let deviceId: string | null = null;
+    incCounter("music_ws_connections_total");
 
     s.on("message", (raw) => {
       let msg: Record<string, unknown>;

@@ -7,6 +7,7 @@ import { config } from "./config.js";
 import { redis } from "./redis/client.js";
 import { prisma } from "./db/prisma.js";
 import { authRoutes, ensureSeedUser } from "./api/auth.js";
+import { metricsText } from "./metrics.js";
 import { deviceRoutes } from "./api/devices.js";
 import { searchRoutes } from "./api/search.js";
 import { queueRoutes } from "./api/queue.js";
@@ -47,11 +48,17 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
   });
 
+  // Prometheus-text metrics (scrape without auth, like /healthz)
+  app.get("/metrics", async (_req, reply) => {
+    reply.header("content-type", "text/plain; version=0.0.4; charset=utf-8");
+    return metricsText();
+  });
+
   // Auth guard (PRD §30): all /api/* routes require a JWT except login and the
   // public player pairing flow. WebSocket has its own first-message auth (D-07).
   app.addHook("onRequest", async (req, reply) => {
     const url = req.url.split("?")[0] ?? "";
-    if (url === "/api/auth/login" || url === "/api/player/pair" || url === "/healthz" || url === "/health" || url === "/ready" || url.startsWith("/ws")) return;
+    if (url === "/api/auth/login" || url === "/api/player/pair" || url === "/healthz" || url === "/health" || url === "/ready" || url === "/metrics" || url.startsWith("/ws")) return;
     if (url.startsWith("/api/")) {
       try {
         await req.jwtVerify();

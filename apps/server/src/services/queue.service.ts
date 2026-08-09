@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { QueueItem, Track } from "@music-connect/types";
 import { RedisKeys } from "@music-connect/shared";
 import { redis } from "../redis/client.js";
+import { incCounter } from "../metrics.js";
 import { prisma } from "../db/prisma.js";
 
 /**
@@ -62,6 +63,7 @@ export class QueueService {
           const queue = await this.get(deviceId);
           const next = fn(queue);
           await redis.set(key, JSON.stringify(next));
+          incCounter("music_queue_mutations_total");
           return next;
         } finally {
           await redis

@@ -166,6 +166,11 @@ export const api = {
 
   history: () => request<{ history: HistoryDTO[] }>("/history"),
   clearHistory: () => request<{ ok: boolean }>("/history", { method: "DELETE" }),
+  changePassword: (oldPassword: string, newPassword: string) =>
+    request<{ ok: boolean }>("/auth/password", {
+      method: "PUT",
+      body: JSON.stringify({ oldPassword, newPassword }),
+    }),
   getSelectedDevice: () => request<{ deviceId: string | null }>("/selected-device"),
   setSelectedDevice: (deviceId: string) =>
     request<{ ok: boolean }>("/selected-device", { method: "PUT", body: JSON.stringify({ deviceId }) }),

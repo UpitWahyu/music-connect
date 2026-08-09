@@ -16,9 +16,21 @@ export function verifyPassword(password: string, stored: string): boolean {
   return candidate.length === expected.length && timingSafeEqual(candidate, expected);
 }
 
+/** Seed the first user from env when the DB has none (fresh install). */
+export async function ensureSeedUser(): Promise<void> {
+  const count = await prisma.user.count();
+  if (count > 0) return;
+  const username = process.env.ADMIN_USERNAME || "admin";
+  const password = process.env.ADMIN_PASSWORD || "admin";
+  await prisma.user.create({
+    data: { username, passwordHash: hashPassword(password), role: "admin" },
+  });
+  console.log(`[auth] no users in DB — seeded "${username}" from env (change the password after login)`);
+}
+
 /**
  * Auth (PRD §30, D-03 single user, D-10 rate limit).
- * TODO Phase 8: user provisioning (seed an admin user via script).
+ * Credentials live in the DB (User table) — env only seeds the first one.
  */
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post(
@@ -37,6 +49,33 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
       const token = app.jwt.sign({ sub: user.id, username: user.username });
       return { token };
+    },
+  );
+
+  // Change the password (DB-backed credentials — this is the source of truth).
+  app.put(
+    "/api/auth/password",
+    {
+      config: { rateLimit: { max: 5, timeWindow: "1 minute" } },
+    },
+    async (req, reply) => {
+      const uid = (req.user as { sub?: string }).sub;
+      if (!uid) return reply.code(401).send({ error: "UNAUTHORIZED" });
+      const { oldPassword, newPassword } = (req.body ?? {}) as {
+        oldPassword?: string;
+        newPassword?: string;
+      };
+      if (!oldPassword || !newPassword) return reply.code(400).send({ error: "MISSING_FIELDS" });
+      if (newPassword.length < 6) return reply.code(400).send({ error: "PASSWORD_TOO_SHORT" });
+      const user = await prisma.user.findUnique({ where: { id: uid } });
+      if (!user || !verifyPassword(oldPassword, user.passwordHash)) {
+        return reply.code(401).send({ error: "INVALID_CREDENTIALS" });
+      }
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: hashPassword(newPassword) },
+      });
+      return { ok: true };
     },
   );
 }

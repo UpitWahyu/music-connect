@@ -5,7 +5,7 @@ import rateLimit from "@fastify/rate-limit";
 import websocket from "@fastify/websocket";
 import { config } from "./config.js";
 import { connectRedis } from "./redis/client.js";
-import { authRoutes } from "./api/auth.js";
+import { authRoutes, ensureSeedUser } from "./api/auth.js";
 import { deviceRoutes } from "./api/devices.js";
 import { searchRoutes } from "./api/search.js";
 import { queueRoutes } from "./api/queue.js";
@@ -55,4 +55,5 @@ await app.register(libraryRoutes);
 await registerWsGateway(app);
 
 await connectRedis();
+await ensureSeedUser(); // DB-backed credentials: env only seeds the first user
 await app.listen({ port: config.port, host: config.host });

@@ -27,19 +27,38 @@ export class Mpv extends EventEmitter {
   private buf = "";
   private nextId = 1;
   private pending = new Map<number, PendingCommand>();
+  private readonly isTcp: boolean;
+  private readonly host: string;
+  private readonly port: number;
 
   state: MpvState = { paused: false, position: 0, duration: 0, volume: 70, idle: true };
 
-  constructor(private readonly socketPath: string) {
+  constructor(ipcEndpoint: string) {
     super();
     // many commands may wait on the IPC socket at once (slow device boot)
     this.setMaxListeners(50);
+    // endpoint: "host:port" (TCP loopback, default — reliable on Termux) or
+    // a filesystem path (unix socket) when MPV_IPC is set to one
+    const tcp = ipcEndpoint.match(/^([^:/]+):(\d+)$/);
+    if (tcp) {
+      this.isTcp = true;
+      this.host = tcp[1];
+      this.port = Number(tcp[2]);
+    } else {
+      this.isTcp = false;
+      this.host = ipcEndpoint;
+      this.port = 0;
+    }
+  }
+
+  private get ipcArg(): string {
+    return this.isTcp ? `--input-ipc-server=${this.host}:${this.port}` : `--input-ipc-server=${this.host}`;
   }
 
   start(): void {
     // MPV_BIN lets unusual environments (Termux, portable builds) point at mpv
     const bin = process.env.MPV_BIN ?? "mpv";
-    this.proc = spawn(bin, ["--no-video", "--idle=yes", `--input-ipc-server=${this.socketPath}`], {
+    this.proc = spawn(bin, ["--no-video", "--idle=yes", this.ipcArg], {
       stdio: ["ignore", "ignore", "pipe"],
     });
     this.proc.stderr?.on("data", (d: Buffer) => this.emit("stderr", d.toString()));
@@ -60,7 +79,9 @@ export class Mpv extends EventEmitter {
   }
 
   private connectWithRetry(attempt = 0): void {
-    const sock = createConnection(this.socketPath);
+    const sock = this.isTcp
+      ? createConnection({ host: this.host, port: this.port })
+      : createConnection(this.host);
     sock.on("connect", () => {
       this.sock = sock;
       this.buf = "";

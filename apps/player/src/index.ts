@@ -6,7 +6,7 @@ import { makeCommandHandler } from "./commands.js";
 
 const config = loadConfig();
 const state = new PlayerState();
-const mpv = new Mpv(config.mpvSocket);
+const mpv = new Mpv(config.mpvIpc);
 mpv.start();
 
 // The player agent is a long-running process — a failed mpv/IPC interaction

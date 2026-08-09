@@ -20,6 +20,10 @@ const isPlaying = computed(() => pb.value?.state === "playing");
 const track = computed(() => pb.value?.track ?? null);
 const otherDevices = computed(() => store.devices.filter((d) => d.id !== store.selectedDevice));
 const thisDevice = computed(() => store.devices.find((d) => d.id === store.selectedDevice) ?? null);
+/** Another online device currently able to play (for offline-selection hints). */
+const activeOtherDevice = computed(
+  () => store.devices.find((d) => d.id !== store.selectedDevice && d.online) ?? null,
+);
 const progressPct = computed(() => {
   const d = track.value?.duration ?? 0;
   return d > 0 ? Math.min(100, ((pb.value?.position ?? 0) / d) * 100) : 0;
@@ -118,9 +122,11 @@ async function saveMac(): Promise<void> {
             {{
               track?.artist
                 ? `${track.artist} · ${formatDuration(track.duration ?? 0)}`
-                : thisDevice && !thisDevice.online
-                  ? "Musik tidak diputar di device ini"
-                  : "Pilih tab Cari untuk mulai"
+                : thisDevice && !thisDevice.online && activeOtherDevice
+                  ? `Musik berjalan di ${activeOtherDevice.name || activeOtherDevice.id} — pilih di dropdown untuk pindah`
+                  : thisDevice && !thisDevice.online
+                    ? "Device ini offline — nyalakan player-nya dulu"
+                    : "Pilih tab Cari untuk mulai"
             }}
           </div>
         </div>

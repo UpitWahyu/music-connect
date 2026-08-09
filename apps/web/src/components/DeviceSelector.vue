@@ -32,7 +32,7 @@ const selectedOnline = computed(() => {
     >
       <option value="" disabled>Pilih device…</option>
       <option v-for="d in store.devices" :key="d.id" :value="d.id">
-        {{ d.name || d.id }}
+        {{ d.name || d.id }}{{ d.online ? "" : " (offline)" }}
       </option>
     </select>
   </div>

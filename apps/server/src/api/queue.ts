@@ -22,7 +22,9 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
 
   app.post("/api/devices/:id/queue/clear", async (req) => {
     const { id } = req.params as { id: string };
-    return { queue: await queueService.clear(id) };
+    const queue = await queueService.clear(id);
+    broadcastToControllers({ type: "queue.updated", deviceId: id, queue }); // sync all browsers
+    return { queue };
   });
 
   /** Deletes by stable item id — not index (see §41). */

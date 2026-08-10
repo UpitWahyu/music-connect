@@ -1,11 +1,30 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { ListMusic, Music2, Play, Sparkles, Heart, FolderPlus, ChevronUp, ChevronDown } from "lucide-vue-next";
+import { ListMusic, Music2, Play, Sparkles, Heart, FolderPlus, ChevronUp, ChevronDown, Trash2 } from "lucide-vue-next";
 import { api, type QueueItemDTO } from "../lib/api";
 import { store, refreshQueue, refreshState, refreshPlaylists, refreshFavorites } from "../composables/useMusic";
 import { showToast } from "../composables/useToast";
 import { t } from "../i18n";
 import { formatDuration } from "../lib/format";
+
+// --- clear queue with confirmation modal ---
+const confirmClear = ref(false);
+const clearing = ref(false);
+
+async function doClearQueue(): Promise<void> {
+  if (!store.selectedDevice) return;
+  clearing.value = true;
+  try {
+    await api.clearQueue(store.selectedDevice);
+    store.queue = [];
+    showToast(t("queueCleared"));
+  } catch {
+    showToast(t("queueClearedError"));
+  } finally {
+    clearing.value = false;
+    confirmClear.value = false;
+  }
+}
 
 // --- drag & drop reorder (native HTML5; optimistic + server commit) ---
 const dragId = ref<string | null>(null);
@@ -156,6 +175,14 @@ async function togglePlaylist(playlistId: string): Promise<void> {
         {{ t("queue") }}
         <span class="text-neutral-600">({{ store.queue.length }})</span>
       </h2>
+      <button
+        v-if="store.queue.length > 0"
+        class="flex h-7 w-7 items-center justify-center rounded-full text-neutral-500 transition hover:bg-red-500/10 hover:text-red-400"
+        :title="t('clearQueue')"
+        @click="confirmClear = true"
+      >
+        <Trash2 :size="14" />
+      </button>
     </div>
 
     <ul v-if="store.queue.length" class="divide-y divide-white/5">
@@ -258,4 +285,33 @@ async function togglePlaylist(playlistId: string): Promise<void> {
     </div>
     <p v-else-if="!store.queue.length" class="py-4 text-center text-sm text-neutral-500">{{ t("queueEmpty") }}</p>
   </section>
+
+  <!-- clear-queue confirmation modal -->
+  <Teleport to="body">
+    <div
+      v-if="confirmClear"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      @click.self="confirmClear = false"
+    >
+      <div class="w-full max-w-sm rounded-2xl border border-white/10 bg-[#14141c] p-5 shadow-2xl">
+        <h3 class="text-base font-semibold text-white">{{ t("clearConfirmTitle") }}</h3>
+        <p class="mt-1.5 text-sm leading-relaxed text-neutral-400">{{ t("clearConfirmDesc") }}</p>
+        <div class="mt-5 flex justify-end gap-2">
+          <button
+            class="rounded-xl bg-white/10 px-4 py-2 text-sm font-medium text-neutral-200 transition hover:bg-white/15"
+            @click="confirmClear = false"
+          >
+            {{ t("cancel") }}
+          </button>
+          <button
+            class="rounded-xl bg-red-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-600 disabled:opacity-50"
+            :disabled="clearing"
+            @click="doClearQueue"
+          >
+            {{ clearing ? "…" : t("clear") }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>

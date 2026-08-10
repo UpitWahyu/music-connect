@@ -54,11 +54,14 @@ function onKeydown(e: KeyboardEvent): void {
   if (e.key === " ") {
     e.preventDefault();
     const playing = store.playback.state === "playing";
-    void (playing ? api.pause(d) : api.resume(d));
+    const type = playing ? "pause" : "resume";
+    const sent = sendWsCommand({ type, deviceId: d });
+    if (!sent) void (playing ? api.pause(d) : api.resume(d));
   } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
     e.preventDefault();
-    const pos = store.playback.position ?? 0;
-    void api.seek(d, Math.max(0, pos + (e.key === "ArrowRight" ? 5 : -5)));
+    const pos = Math.max(0, (store.playback.position ?? 0) + (e.key === "ArrowRight" ? 5 : -5));
+    const sent = sendWsCommand({ type: "seek", deviceId: d, position: pos });
+    if (!sent) void api.seek(d, pos);
   } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
     e.preventDefault();
     const vol = Math.min(100, Math.max(0, (store.playback.volume ?? 70) + (e.key === "ArrowUp" ? 5 : -5)));

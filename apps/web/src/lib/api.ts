@@ -37,6 +37,8 @@ export interface PlaybackStateDTO {
   position: number;
   volume: number;
   queueIndex: number;
+  shuffle?: boolean;
+  repeat?: "off" | "all" | "one";
   updatedAt: number;
 }
 
@@ -132,6 +134,10 @@ export const api = {
   previous: (deviceId: string) => request(`/devices/${deviceId}/previous`, { method: "POST", body: "{}" }),
   seek: (deviceId: string, position: number) =>
     request(`/devices/${deviceId}/seek`, { method: "POST", body: JSON.stringify({ position }) }),
+  shuffle: (deviceId: string, shuffle: boolean) =>
+    request(`/devices/${deviceId}/shuffle`, { method: "POST", body: JSON.stringify({ shuffle }) }),
+  repeat: (deviceId: string, mode: "off" | "all" | "one") =>
+    request(`/devices/${deviceId}/repeat`, { method: "POST", body: JSON.stringify({ mode }) }),
   volume: (deviceId: string, volume: number) =>
     request(`/devices/${deviceId}/volume`, { method: "POST", body: JSON.stringify({ volume }) }),
   transfer: (from: string, to: string) =>

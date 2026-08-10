@@ -5,6 +5,9 @@ import {
   Pause,
   SkipBack,
   SkipForward,
+  Shuffle,
+  Repeat,
+  Repeat1,
   Volume2,
   VolumeX,
   Power,
@@ -91,7 +94,38 @@ async function cmd(fn: () => Promise<unknown>): Promise<void> {
 
 function togglePlay(): void {
   if (!store.selectedDevice) return;
-  void cmd(() => (isPlaying.value ? api.pause(store.selectedDevice!) : api.resume(store.selectedDevice!)));
+  const target = isPlaying.value ? "pause" : "resume";
+  // WS fast path; REST fallback while the socket is down
+  const sent = sendWsCommand({ type: target, deviceId: store.selectedDevice });
+  if (!sent) void cmd(() => (isPlaying.value ? api.pause(store.selectedDevice!) : api.resume(store.selectedDevice!)));
+}
+
+function toggleShuffle(): void {
+  if (!store.selectedDevice) return;
+  const next = !(store.playback?.shuffle ?? false);
+  const sent = sendWsCommand({ type: "shuffle", deviceId: store.selectedDevice, shuffle: next });
+  if (!sent) void cmd(() => api.shuffle(store.selectedDevice!, next));
+}
+
+function cycleRepeat(): void {
+  if (!store.selectedDevice) return;
+  const order = ["off", "all", "one"] as const;
+  const cur = store.playback?.repeat ?? "off";
+  const next = order[(order.indexOf(cur) + 1) % order.length]!;
+  const sent = sendWsCommand({ type: "repeat", deviceId: store.selectedDevice, mode: next });
+  if (!sent) void cmd(() => api.repeat(store.selectedDevice!, next));
+}
+
+function transportNext(): void {
+  if (!store.selectedDevice) return;
+  const sent = sendWsCommand({ type: "next", deviceId: store.selectedDevice });
+  if (!sent) void cmd(() => api.next(store.selectedDevice!));
+}
+
+function transportPrevious(): void {
+  if (!store.selectedDevice) return;
+  const sent = sendWsCommand({ type: "previous", deviceId: store.selectedDevice });
+  if (!sent) void cmd(() => api.previous(store.selectedDevice!));
 }
 
 async function wake(): Promise<void> {
@@ -201,7 +235,15 @@ async function saveMac(): Promise<void> {
       </button>
 
       <!-- controls -->
-      <button class="rounded-full p-1.5 text-neutral-300 transition hover:text-white" @click="cmd(() => api.previous(store.selectedDevice!))">
+      <button
+        class="rounded-full p-1.5 transition"
+        :class="store.playback?.shuffle ? 'text-green-500' : 'text-neutral-400 hover:text-white'"
+        :title="t('shuffle')"
+        @click="toggleShuffle"
+      >
+        <Shuffle :size="16" />
+      </button>
+      <button class="rounded-full p-1.5 text-neutral-300 transition hover:text-white" @click="transportPrevious">
         <SkipBack :size="20" />
       </button>
       <button
@@ -211,8 +253,17 @@ async function saveMac(): Promise<void> {
         <Pause v-if="isPlaying" :size="18" />
         <Play v-else :size="18" class="ml-0.5" />
       </button>
-      <button class="rounded-full p-1.5 text-neutral-300 transition hover:text-white" @click="cmd(() => api.next(store.selectedDevice!))">
+      <button class="rounded-full p-1.5 text-neutral-300 transition hover:text-white" @click="transportNext">
         <SkipForward :size="20" />
+      </button>
+      <button
+        class="rounded-full p-1.5 transition"
+        :class="store.playback?.repeat !== 'off' ? 'text-green-500' : 'text-neutral-400 hover:text-white'"
+        :title="store.playback?.repeat === 'one' ? t('repeatOne') : store.playback?.repeat === 'all' ? t('repeatAll') : t('repeatOff')"
+        @click="cycleRepeat"
+      >
+        <Repeat1 v-if="store.playback?.repeat === 'one'" :size="16" />
+        <Repeat v-else :size="16" />
       </button>
 
       <!-- volume (desktop): icon toggles mute, slider drags over WS (250ms) -->

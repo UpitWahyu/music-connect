@@ -56,6 +56,8 @@ export interface Device {
 
 export type PlaybackStatus = "playing" | "paused" | "stopped" | "offline";
 
+export type RepeatMode = "off" | "all" | "one";
+
 /** Playback state snapshot stored in Redis (PRD §16). */
 export interface PlaybackState {
   deviceId: string;
@@ -64,6 +66,8 @@ export interface PlaybackState {
   position: number; // seconds
   volume: number;
   queueIndex: number;
+  shuffle: boolean;
+  repeat: RepeatMode;
   updatedAt: number; // epoch ms
 }
 

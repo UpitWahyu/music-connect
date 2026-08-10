@@ -68,6 +68,24 @@ export async function playbackRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
+  app.post("/api/devices/:id/shuffle", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = (req.body ?? {}) as { shuffle?: boolean };
+    if (typeof body.shuffle !== "boolean") return reply.code(400).send({ error: "INVALID_SHUFFLE" });
+    await playbackService.setShuffle(id, body.shuffle);
+    return { ok: true };
+  });
+
+  app.post("/api/devices/:id/repeat", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = (req.body ?? {}) as { mode?: string };
+    if (body.mode !== "off" && body.mode !== "all" && body.mode !== "one") {
+      return reply.code(400).send({ error: "INVALID_REPEAT_MODE" });
+    }
+    await playbackService.setRepeat(id, body.mode);
+    return { ok: true };
+  });
+
   app.post("/api/devices/:id/seek", async (req, reply) => {
     const { id } = req.params as { id: string };
     const body = (req.body ?? {}) as { position?: number };

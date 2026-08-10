@@ -57,6 +57,40 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
             // player offline — the value still persists for the next connect
           });
         }
+        return;
+      }
+      // lightweight transport commands (same services as the REST routes)
+      const deviceId = typeof msg.deviceId === "string" ? msg.deviceId : "";
+      if (!deviceId) return;
+      const run = (p: Promise<unknown>): void => {
+        void p.catch(() => {
+          /* player offline etc — the web falls back to REST on failure */
+        });
+      };
+      switch (msg.type) {
+        case "pause":
+          run(playbackService.pause(deviceId));
+          break;
+        case "resume":
+          run(playbackService.resume(deviceId));
+          break;
+        case "next":
+          run(playbackService.next(deviceId));
+          break;
+        case "previous":
+          run(playbackService.previous(deviceId));
+          break;
+        case "seek":
+          if (typeof msg.position === "number") run(playbackService.seek(deviceId, msg.position));
+          break;
+        case "shuffle":
+          if (typeof msg.shuffle === "boolean") run(playbackService.setShuffle(deviceId, msg.shuffle));
+          break;
+        case "repeat":
+          if (msg.mode === "off" || msg.mode === "all" || msg.mode === "one") {
+            run(playbackService.setRepeat(deviceId, msg.mode));
+          }
+          break;
       }
     });
 

@@ -1,5 +1,5 @@
 import type { MediaRef, PlayerStateReport } from "@music-connect/protocol";
-import type { PlaybackState, QueueItem, Track } from "@music-connect/types";
+import type { PlaybackState, QueueItem, Track, RepeatMode } from "@music-connect/types";
 import { RedisKeys } from "@music-connect/shared";
 import { redis } from "../redis/client.js";
 import { prisma } from "../db/prisma.js";
@@ -17,6 +17,8 @@ const EMPTY_STATE = (deviceId: string): PlaybackState => ({
   position: 0,
   volume: 70,
   queueIndex: 0,
+  shuffle: false,
+  repeat: "off",
   updatedAt: Date.now(),
 });
 
@@ -84,6 +86,18 @@ export class PlaybackService {
     await this.patchState(deviceId, { volume });
   }
 
+  /** Toggle shuffle — state only, applied on the next track choice. */
+  async setShuffle(deviceId: string, shuffle: boolean): Promise<void> {
+    incCounter("music_playback_commands_total");
+    await this.patchState(deviceId, { shuffle });
+  }
+
+  /** Set repeat mode: "off" | "all" | "one". */
+  async setRepeat(deviceId: string, repeat: RepeatMode): Promise<void> {
+    incCounter("music_playback_commands_total");
+    await this.patchState(deviceId, { repeat });
+  }
+
   async stop(deviceId: string): Promise<void> {
     incCounter("music_playback_commands_total");
     this.requireOnline(sendToPlayer(deviceId, { type: "player.stop" }));
@@ -91,15 +105,54 @@ export class PlaybackService {
   }
 
   /**
-   * Next track (manual or auto via track.ended). Advances the server queue;
-   * if the queue is exhausted it refills from recommendations first (§25, auto-queue).
+   * Next track (manual or auto via track.ended). Repeat-one replays the
+   * current track; shuffle picks a random different track; repeat-all wraps
+   * at the end; otherwise advance with auto-queue refill.
    */
   async next(deviceId: string): Promise<void> {
     incCounter("music_playback_commands_total");
+    const state = (await this.getState(deviceId)) ?? EMPTY_STATE(deviceId);
+    const queue = await queueService.get(deviceId);
+    const currentIndex = await queueService.getIndex(deviceId);
+
+    // repeat-one: replay the same track (matches Spotify's manual-next too)
+    if (state.repeat === "one") {
+      const item = queue[currentIndex] ?? (await queueService.getCurrent(deviceId));
+      if (item) {
+        await this.loadTrack(deviceId, item);
+        await autoQueueService.ensure(deviceId, item.track.id);
+        return;
+      }
+    }
+
+    // shuffle: pick a different random track from the queue
+    if (state.shuffle && queue.length > 1) {
+      let target = currentIndex;
+      while (target === currentIndex) target = Math.floor(Math.random() * queue.length);
+      await queueService.setIndex(deviceId, target);
+      const item = queue[target];
+      if (item) {
+        await this.loadTrack(deviceId, item);
+        await autoQueueService.ensure(deviceId, item.track.id);
+        return;
+      }
+    }
+
+    // repeat-all: wrap to the first track at the end
+    if (state.repeat === "all" && queue.length > 0 && currentIndex >= queue.length - 1) {
+      await queueService.setIndex(deviceId, 0);
+      const item = queue[0];
+      if (item) {
+        await this.loadTrack(deviceId, item);
+        await autoQueueService.ensure(deviceId, item.track.id);
+        return;
+      }
+    }
+
+    // normal advance (with auto-queue refill)
     let item = await queueService.advance(deviceId);
     if (!item) {
-      const state = await this.getState(deviceId);
-      await autoQueueService.ensure(deviceId, state?.track?.id ?? null);
+      await autoQueueService.ensure(deviceId, state.track?.id ?? null);
       item = await queueService.advance(deviceId);
     }
     if (!item) {

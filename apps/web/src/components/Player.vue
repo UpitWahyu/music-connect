@@ -41,6 +41,16 @@ const seekDragging = ref(false);
 const trackDuration = computed(() => track.value?.duration ?? 0);
 const seekDisplay = computed(() => (seekDragging.value ? seekLocal.value : pb.value?.position ?? 0));
 
+/** Green played portion + faint track, like the old progress line. */
+const seekPct = computed(() => {
+  const d = trackDuration.value;
+  const pos = seekDisplay.value;
+  return d > 0 ? Math.min(100, (pos / d) * 100) : 0;
+});
+const seekBarStyle = computed(() => ({
+  background: `linear-gradient(to right, #22c55e ${seekPct.value}%, rgba(255,255,255,0.1) ${seekPct.value}%)`,
+}));
+
 function onSeekStart(): void {
   seekDragging.value = true;
   seekLocal.value = pb.value?.position ?? 0;
@@ -242,7 +252,8 @@ async function saveMac(): Promise<void> {
         :max="trackDuration"
         step="1"
         :value="seekDisplay"
-        class="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-green-500"
+        :style="seekBarStyle"
+        class="seek-slider h-1.5 w-full cursor-pointer appearance-none rounded-full"
         @pointerdown="onSeekStart"
         @input="onSeekInput"
         @change="onSeekCommit"
@@ -444,3 +455,37 @@ async function saveMac(): Promise<void> {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* seek thumb: hidden at rest, appears on hover (desktop) / while dragging */
+.seek-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background: #22c55e;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.5);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  cursor: grab;
+}
+.seek-slider:hover::-webkit-slider-thumb,
+.seek-slider:active::-webkit-slider-thumb {
+  opacity: 1;
+}
+.seek-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 9999px;
+  background: #22c55e;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  cursor: grab;
+}
+.seek-slider:hover::-moz-range-thumb,
+.seek-slider:active::-moz-range-thumb {
+  opacity: 1;
+}
+</style>

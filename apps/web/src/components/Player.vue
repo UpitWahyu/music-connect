@@ -457,7 +457,7 @@ async function saveMac(): Promise<void> {
 </template>
 
 <style scoped>
-/* seek thumb: hidden at rest, appears on hover (desktop) / while dragging */
+/* seek thumb: always visible, like the volume slider */
 .seek-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
@@ -466,13 +466,7 @@ async function saveMac(): Promise<void> {
   border-radius: 9999px;
   background: #22c55e;
   box-shadow: 0 0 6px rgba(34, 197, 94, 0.5);
-  opacity: 0;
-  transition: opacity 0.15s ease;
   cursor: grab;
-}
-.seek-slider:hover::-webkit-slider-thumb,
-.seek-slider:active::-webkit-slider-thumb {
-  opacity: 1;
 }
 .seek-slider::-moz-range-thumb {
   width: 12px;
@@ -480,12 +474,6 @@ async function saveMac(): Promise<void> {
   border: none;
   border-radius: 9999px;
   background: #22c55e;
-  opacity: 0;
-  transition: opacity 0.15s ease;
   cursor: grab;
-}
-.seek-slider:hover::-moz-range-thumb,
-.seek-slider:active::-moz-range-thumb {
-  opacity: 1;
 }
 </style>

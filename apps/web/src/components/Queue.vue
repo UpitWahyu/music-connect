@@ -168,7 +168,7 @@ async function togglePlaylist(playlistId: string): Promise<void> {
 </script>
 
 <template>
-  <section class="rounded-2xl border border-white/5 bg-[#14141c] p-4">
+  <section class="mt-6 rounded-2xl border border-white/5 bg-[#14141c] p-4">
     <div class="mb-2 flex items-center justify-between">
       <h2 class="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">
         <ListMusic :size="14" />

@@ -112,7 +112,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof SearchIcon }> = [
       <Playlists v-if="tab === 'playlists'" />
       <Favorites v-if="tab === 'favorites'" />
       <History v-if="tab === 'history'" />
-      <Queue v-if="tab !== 'history'" class="mt-6" />
+      <Queue v-if="tab !== 'history'" />
     </div>
     <p v-else class="mt-24 text-center text-sm text-neutral-500">
       {{ t("selectDeviceHint") }}

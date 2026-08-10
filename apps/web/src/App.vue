@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from "vue";
 import { Music, Search as SearchIcon, FolderOpen, Heart, History as HistoryIcon, LogOut, CircleUser, Settings as SettingsIcon } from "lucide-vue-next";
-import { store, refreshDevices, startPolling, stopPolling, logout, sendWsCommand } from "./composables/useMusic";
+import { store, refreshDevices, startRealtime, startPolling, stopPolling, logout, sendWsCommand } from "./composables/useMusic";
 import { api } from "./lib/api";
 import { t } from "./i18n";
 import Login from "./components/Login.vue";
@@ -35,6 +35,9 @@ onMounted(() => {
   window.addEventListener("keydown", onKeydown);
   if (store.authed) {
     void refreshDevices();
+    // session restore (token in localStorage) skips login() — realtime WS must
+    // still start, otherwise the UI falls back to slow 10s polling only
+    startRealtime();
     startPolling();
   }
 });

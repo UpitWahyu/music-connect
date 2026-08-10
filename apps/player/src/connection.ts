@@ -21,11 +21,23 @@ export class PlayerConnection extends EventEmitter {
   }
 
   connect(): void {
-    const ws = new WebSocket(this.url);
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(this.url);
+    } catch (e) {
+      // invalid/missing server URL throws SYNCHRONOUSLY — never crash the agent
+      console.error(
+        `[connection] invalid server URL "${this.url}" — check MUSIC_SERVER_URL:`,
+        e instanceof Error ? e.message : e,
+      );
+      this.scheduleReconnect();
+      return;
+    }
     this.ws = ws;
 
     ws.on("open", () => {
       this.retryMs = 1000;
+      console.log(`[connection] WS connected to ${this.url}`);
       ws.send(JSON.stringify({ type: "player.auth", deviceId: this.deviceId, token: this.token }));
     });
 
@@ -43,8 +55,9 @@ export class PlayerConnection extends EventEmitter {
       if (!this.stopped) this.scheduleReconnect();
     });
 
-    ws.on("error", () => {
-      /* close event follows — handled above */
+    ws.on("error", (e) => {
+      // visible during debugging: DNS/TLS/network failures show up here
+      console.error(`[connection] WS error (${this.url}):`, e instanceof Error ? e.message : e);
     });
   }
 

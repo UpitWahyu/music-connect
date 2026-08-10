@@ -35,6 +35,34 @@ const progressPct = computed(() => {
   return d > 0 ? Math.min(100, ((pb.value?.position ?? 0) / d) * 100) : 0;
 });
 
+// --- seek slider (Spotify style): preview while dragging, ONE command on release ---
+const seekLocal = ref(0);
+const seekDragging = ref(false);
+const trackDuration = computed(() => track.value?.duration ?? 0);
+const seekDisplay = computed(() => (seekDragging.value ? seekLocal.value : pb.value?.position ?? 0));
+
+function onSeekStart(): void {
+  seekDragging.value = true;
+  seekLocal.value = pb.value?.position ?? 0;
+}
+
+function onSeekInput(e: Event): void {
+  // drag preview only — nothing is sent to the server while dragging
+  seekDragging.value = true;
+  seekLocal.value = Number((e.target as HTMLInputElement).value);
+}
+
+function onSeekCommit(e: Event): void {
+  // fired on release: exactly one seek command per drag (no WS/mpv spam)
+  const pos = Number((e.target as HTMLInputElement).value);
+  seekDragging.value = false;
+  seekLocal.value = pos;
+  if (!store.selectedDevice) return;
+  if (store.playback) store.playback.position = pos; // optimistic — push confirms
+  const sent = sendWsCommand({ type: "seek", deviceId: store.selectedDevice, position: pos });
+  if (!sent) void cmd(() => api.seek(store.selectedDevice!, pos));
+}
+
 const showDetail = ref(false);
 const macInput = ref("");
 const wakeMsg = ref("");
@@ -202,10 +230,30 @@ async function saveMac(): Promise<void> {
     v-if="store.selectedDevice"
     class="fixed inset-x-0 bottom-0 z-50 border-t border-white/5 bg-[#101019]/95 shadow-[0_-8px_30px_rgba(0,0,0,0.45)] backdrop-blur"
   >
-    <!-- progress line -->
-    <div class="h-0.5 bg-white/10">
-      <div class="h-full bg-green-500 transition-all" :style="{ width: `${progressPct}%` }"></div>
+    <!-- seek slider (Spotify style: preview while dragging, commit on release) -->
+    <div v-if="trackDuration > 0" class="relative px-1 pt-1">
+      <span
+        v-if="seekDragging"
+        class="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 rounded-md bg-black/85 px-1.5 py-0.5 text-[10px] font-medium text-white"
+      >{{ formatDuration(seekLocal) }}</span>
+      <input
+        type="range"
+        min="0"
+        :max="trackDuration"
+        step="1"
+        :value="seekDisplay"
+        class="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-green-500"
+        @pointerdown="onSeekStart"
+        @input="onSeekInput"
+        @change="onSeekCommit"
+      />
+      <!-- time labels: live current position (while sliding too) + total -->
+      <div class="mt-0.5 flex justify-between text-[10px] font-medium text-neutral-500">
+        <span>{{ formatDuration(seekDragging ? seekLocal : (store.playback?.position ?? 0)) }}</span>
+        <span>{{ formatDuration(trackDuration) }}</span>
+      </div>
     </div>
+    <div v-else class="h-0.5 bg-white/10"></div>
 
     <div class="mx-auto flex max-w-md items-center gap-2.5 px-4 py-2">
       <!-- track info (tap → detail) -->

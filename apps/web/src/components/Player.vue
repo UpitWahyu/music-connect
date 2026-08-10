@@ -12,7 +12,7 @@ import {
   FolderPlus,
 } from "lucide-vue-next";
 import { api } from "../lib/api";
-import { store, refreshState, refreshDevices, refreshFavorites, refreshPlaylists } from "../composables/useMusic";
+import { store, sendWsCommand, refreshState, refreshDevices, refreshFavorites, refreshPlaylists } from "../composables/useMusic";
 import { showToast } from "../composables/useToast";
 import { t, i18n } from "../i18n";
 import { formatDuration } from "../lib/format";
@@ -35,9 +35,11 @@ const showDetail = ref(false);
 const macInput = ref("");
 const wakeMsg = ref("");
 
-// Volume: local ref for instant slider feedback, debounced commit to the API.
+// Volume: local ref for instant slider feedback, WS command throttled to
+// 250ms (falls back to REST when the WS is not open yet).
 const volumeLocal = ref(70);
 let volumeTimer: ReturnType<typeof setTimeout> | null = null;
+let lastVolumeSent = 0;
 
 watch(
   () => pb.value?.volume,
@@ -48,10 +50,21 @@ watch(
 
 function volumeInput(e: Event): void {
   volumeLocal.value = Number((e.target as HTMLInputElement).value);
-  if (volumeTimer) clearTimeout(volumeTimer);
-  volumeTimer = setTimeout(() => {
-    if (store.selectedDevice) void cmd(() => api.volume(store.selectedDevice!, volumeLocal.value));
-  }, 400);
+  const v = volumeLocal.value;
+  const send = (): void => {
+    lastVolumeSent = Date.now();
+    if (!store.selectedDevice) return;
+    // WS is the fast path; REST is the fallback while the socket is down
+    const sent = sendWsCommand({ type: "setVolume", deviceId: store.selectedDevice, volume: v });
+    if (!sent) void cmd(() => api.volume(store.selectedDevice!, v));
+  };
+  const now = Date.now();
+  if (now - lastVolumeSent >= 250) {
+    send();
+  } else {
+    if (volumeTimer) clearTimeout(volumeTimer);
+    volumeTimer = setTimeout(send, 250); // trailing-edge throttle
+  }
 }
 
 async function cmd(fn: () => Promise<unknown>): Promise<void> {

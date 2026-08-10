@@ -5,9 +5,10 @@ export type WsListener = (event: ServerEvent) => void;
 
 /**
  * Controller WebSocket (PRD §21, D-07 first-message auth).
- * Auto-reconnects every 3s. Returns a disconnect function.
+ * Auto-reconnects every 3s. Returns { disconnect, send }.
+ * send() returns false when the socket is not open — callers fall back to REST.
  */
-export function connectControllerWs(onEvent: WsListener): () => void {
+export function connectControllerWs(onEvent: WsListener): { disconnect: () => void; send: (obj: unknown) => boolean } {
   let closed = false;
   let ws: WebSocket | null = null;
 
@@ -37,8 +38,17 @@ export function connectControllerWs(onEvent: WsListener): () => void {
   };
 
   connect();
-  return () => {
-    closed = true;
-    ws?.close();
+  return {
+    disconnect: () => {
+      closed = true;
+      ws?.close();
+    },
+    send: (obj: unknown): boolean => {
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(obj));
+        return true;
+      }
+      return false;
+    },
   };
 }

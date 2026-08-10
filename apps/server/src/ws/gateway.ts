@@ -46,7 +46,18 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
         }
         return;
       }
-      // TODO Phase 4: route ClientEvent → services (play/pause/seek/volume/transfer...)
+      // hybrid realtime: controllers may send lightweight commands over WS.
+      // volume is the hot path (slider drags); everything else stays on REST.
+      if (msg.type === "setVolume") {
+        const deviceId = typeof msg.deviceId === "string" ? msg.deviceId : "";
+        const volume = msg.volume;
+        if (deviceId && typeof volume === "number" && Number.isFinite(volume)) {
+          const clamped = Math.min(100, Math.max(0, Math.round(volume)));
+          void playbackService.setVolume(deviceId, clamped).catch(() => {
+            // player offline — the value still persists for the next connect
+          });
+        }
+      }
     });
 
     s.on("close", () => removeController(s));

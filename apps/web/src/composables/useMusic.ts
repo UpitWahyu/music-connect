@@ -139,10 +139,16 @@ export function stopPolling(): void {
 
 // --- realtime (WS) ---
 let disconnectWs: (() => void) | null = null;
+let wsSend: ((obj: unknown) => boolean) | null = null;
+
+/** Send a lightweight command over the controller WS (false = WS not open). */
+export function sendWsCommand(obj: unknown): boolean {
+  return wsSend ? wsSend(obj) : false;
+}
 
 export function startRealtime(): void {
   stopRealtime();
-  disconnectWs = connectControllerWs((event) => {
+  const conn = connectControllerWs((event) => {
     if (event.type === "queue.updated") {
       // the queue is GLOBAL per account — always refresh, no device match needed
       void refreshQueue();
@@ -161,9 +167,12 @@ export function startRealtime(): void {
       }
     }
   });
+  disconnectWs = conn.disconnect;
+  wsSend = conn.send;
 }
 
 export function stopRealtime(): void {
   disconnectWs?.();
   disconnectWs = null;
+  wsSend = null;
 }

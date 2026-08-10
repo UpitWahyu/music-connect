@@ -1519,8 +1519,6 @@ Possible future additions:
 - Offline local library
 - Additional music providers
 - Voice control
-- Cross-device volume
-- Remote wake-up
 - Chromecast support
 
 ---
@@ -1827,16 +1825,11 @@ with the same Spotify semantics as YT playlists. History is recorded on every
 track load; `device.userId` is captured at pairing time (stored with the
 pairing code in Redis, written to the Device row on submit).
 
-## D-15 — Device handoff UI & remote wake-up (Phase 7, Phase 9)
+## D-15 — Device handoff UI (Phase 7)
 
 Handoff (§26) is reachable from the controller UI ("⇄ Pindahkan ke" in the
 player card): position carries over, the target keeps its own volume (D-10).
-Phase 9 remote wake-up: devices store a MAC address (`PUT /api/devices/:id`);
-`POST /api/devices/:id/wake` sends a WOL magic packet through MikroTik's
-`/tool/wol` — the music server lives in a datacenter and cannot broadcast on
-the home LAN, so the router does it for us. Requires `MIKROTIK_*` env vars
-(host/port/user/password/interface). The UI shows a ⚡ Wake button when the
-selected device is offline (MAC must be set first).
+Remote wake-up (WOL via MikroTik) was removed — see git history.
 
 ## D-13 — Auto-queue recommendations (extends §24, §25)
 

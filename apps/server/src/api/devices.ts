@@ -4,7 +4,6 @@ import { RedisKeys } from "@music-connect/shared";
 import { redis } from "../redis/client.js";
 import { prisma } from "../db/prisma.js";
 import { sha256 } from "../utils.js";
-import { wolService } from "../services/wol.service.js";
 
 function generatePairingCode(): string {
   const part = (): string => String(randomBytes(2).readUInt16BE(0) % 1000).padStart(3, "0");
@@ -79,37 +78,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  /** Set device metadata (e.g. MAC address for WOL wake-up, Phase 9). */
-  app.put("/api/devices/:id", async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const body = (req.body ?? {}) as { macAddress?: string };
-    if (body.macAddress !== undefined && !/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/.test(body.macAddress)) {
-      return reply.code(400).send({ error: "INVALID_MAC_ADDRESS" });
-    }
-    const device = await prisma.device
-      .update({ where: { id }, data: { macAddress: body.macAddress ? body.macAddress.toUpperCase() : null } })
-      .catch(() => null);
-    if (!device) return reply.code(404).send({ error: "DEVICE_NOT_FOUND" });
-    return { ok: true, device };
-  });
-
-  /** Remote wake-up: send WOL magic packet via MikroTik (Phase 9). */
-  app.post("/api/devices/:id/wake", async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const device = await prisma.device.findUnique({ where: { id } });
-    if (!device) return reply.code(404).send({ error: "DEVICE_NOT_FOUND" });
-    try {
-      await wolService.wake(device.macAddress ?? "");
-      return { ok: true };
-    } catch (e) {
-      const msg = (e as Error).message;
-      if (msg === "MIKROTIK_NOT_CONFIGURED" || msg === "INVALID_MAC_ADDRESS") {
-        return reply.code(400).send({ error: msg });
-      }
-      return reply.code(502).send({ error: msg });
-    }
-  });
-
+  /** Remove a device (also clears its queue/state in Redis). */
   app.delete("/api/devices/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
     await prisma.device.delete({ where: { id } }).catch(() => null);

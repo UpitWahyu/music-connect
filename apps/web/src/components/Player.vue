@@ -10,7 +10,6 @@ import {
   Repeat1,
   Volume2,
   VolumeX,
-  Power,
   MoreHorizontal,
   Heart,
   FolderPlus,
@@ -74,8 +73,6 @@ function onSeekCommit(e: Event): void {
 }
 
 const showDetail = ref(false);
-const macInput = ref("");
-const wakeMsg = ref("");
 
 // Volume: local ref for instant slider feedback, WS command throttled to
 // 250ms (falls back to REST when the WS is not open yet).
@@ -166,16 +163,6 @@ function transportPrevious(): void {
   if (!sent) void cmd(() => api.previous(store.selectedDevice!));
 }
 
-async function wake(): Promise<void> {
-  if (!store.selectedDevice) return;
-  try {
-    await api.wake(store.selectedDevice);
-    showToast(i18n.lang === "id" ? "Wake signal terkirim" : "Wake signal sent");
-  } catch (e) {
-    showToast(`${i18n.lang === "id" ? "Gagal: " : "Failed: "}${(e as Error).message}`, "error");
-  }
-}
-
 // --- favorite & playlist for the CURRENT track ---
 const isFav = computed(() => {
   const t = track.value;
@@ -220,18 +207,6 @@ async function togglePlaylist(playlistId: string): Promise<void> {
   containsMap.value = { ...containsMap.value, [playlistId]: !wasIn };
   await refreshPlaylists();
   showToast(wasIn ? `Dihapus dari ${plName}` : `Ditambahkan ke ${plName}`);
-}
-
-async function saveMac(): Promise<void> {
-  if (!store.selectedDevice || !macInput.value.trim()) return;
-  try {
-    await api.setDeviceMac(store.selectedDevice, macInput.value.trim());
-    macInput.value = "";
-    wakeMsg.value = "MAC tersimpan";
-    await refreshDevices();
-  } catch (e) {
-    wakeMsg.value = `Gagal: ${(e as Error).message}`;
-  }
 }
 </script>
 
@@ -427,29 +402,7 @@ async function saveMac(): Promise<void> {
         </div>
 
         <div v-if="thisDevice && !thisDevice.online" class="rounded-lg bg-black/30 p-2.5 text-center text-xs">
-          <p class="mb-1.5 text-neutral-500">{{ thisDevice.name || thisDevice.id }} sedang offline</p>
-          <template v-if="thisDevice.macAddress">
-            <button
-              class="flex items-center gap-1.5 rounded-lg bg-amber-500/90 px-3 py-1.5 font-semibold text-black transition hover:bg-amber-400"
-              @click="wake"
-            >
-              <Power :size="13" />
-              {{ t("wake") }}
-            </button>
-          </template>
-          <template v-else>
-            <div class="flex items-center gap-2">
-              <input
-                v-model="macInput"
-                :placeholder="t('macPlaceholder')"
-                class="w-44 rounded bg-black/40 px-2 py-1.5 text-xs outline-none"
-              />
-              <button class="rounded-lg bg-white/10 px-3.5 py-1.5 transition hover:bg-white/15" @click="saveMac">
-                Simpan
-              </button>
-            </div>
-          </template>
-          <p v-if="wakeMsg" class="mt-1.5 text-neutral-400">{{ wakeMsg }}</p>
+          <p class="text-neutral-500">{{ thisDevice.name || thisDevice.id }} sedang offline</p>
         </div>
       </div>
     </div>

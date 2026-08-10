@@ -83,9 +83,6 @@ const dict: Record<Lang, Dict> = {
     password: "Password",
     login: "Login",
     loginBusy: "Masuk…",
-    // wake
-    wake: "Wake (WOL)",
-    macPlaceholder: "MAC: 00:D8:61:BD:87:DD",
     // misc
     invalidLink: "Link tidak valid — harus berisi ?list=… (YouTube/YouTube Music)",
     selectDeviceFirst: "Pilih device dulu di panel ⋯",
@@ -167,8 +164,6 @@ const dict: Record<Lang, Dict> = {
     password: "Password",
     login: "Login",
     loginBusy: "Signing in…",
-    wake: "Wake (WOL)",
-    macPlaceholder: "MAC: 00:D8:61:BD:87:DD",
     invalidLink: "Invalid link — must contain ?list=… (YouTube/YouTube Music)",
     selectDeviceFirst: "Select a device first in the ⋯ panel",
     historyTitle: "Play History",

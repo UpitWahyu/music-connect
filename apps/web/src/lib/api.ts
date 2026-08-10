@@ -130,6 +130,8 @@ export const api = {
   resume: (deviceId: string) => request(`/devices/${deviceId}/resume`, { method: "POST", body: "{}" }),
   next: (deviceId: string) => request(`/devices/${deviceId}/next`, { method: "POST", body: "{}" }),
   previous: (deviceId: string) => request(`/devices/${deviceId}/previous`, { method: "POST", body: "{}" }),
+  seek: (deviceId: string, position: number) =>
+    request(`/devices/${deviceId}/seek`, { method: "POST", body: JSON.stringify({ position }) }),
   volume: (deviceId: string, volume: number) =>
     request(`/devices/${deviceId}/volume`, { method: "POST", body: JSON.stringify({ volume }) }),
   transfer: (from: string, to: string) =>

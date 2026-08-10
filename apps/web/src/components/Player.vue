@@ -6,6 +6,7 @@ import {
   SkipBack,
   SkipForward,
   Volume2,
+  VolumeX,
   Power,
   MoreHorizontal,
   Heart,
@@ -40,6 +41,17 @@ const wakeMsg = ref("");
 const volumeLocal = ref(70);
 let volumeTimer: ReturnType<typeof setTimeout> | null = null;
 let lastVolumeSent = 0;
+let lastVolume = 70;
+
+/** Mute toggle: remembers the pre-mute level and restores it on unmute. */
+function toggleMute(): void {
+  if (!store.selectedDevice) return;
+  const target = volumeLocal.value > 0 ? 0 : lastVolume > 0 ? lastVolume : 70;
+  if (volumeLocal.value > 0) lastVolume = volumeLocal.value;
+  volumeLocal.value = target;
+  const sent = sendWsCommand({ type: "setVolume", deviceId: store.selectedDevice, volume: target });
+  if (!sent) void cmd(() => api.volume(store.selectedDevice!, target));
+}
 
 watch(
   () => pb.value?.volume,
@@ -164,6 +176,12 @@ async function saveMac(): Promise<void> {
     <div class="mx-auto flex max-w-md items-center gap-2.5 px-4 py-2">
       <!-- track info (tap → detail) -->
       <button class="flex min-w-0 flex-1 items-center gap-2 text-left" @click="showDetail = !showDetail">
+        <img
+          v-if="track?.thumbnail"
+          :src="track.thumbnail"
+          alt=""
+          class="h-10 w-10 shrink-0 rounded-lg object-cover shadow-md"
+        />
         <div class="min-w-0 flex-1">
           <div class="truncate text-sm font-semibold">
             {{ track?.title ?? (thisDevice && !thisDevice.online ? "Device offline" : "Tidak ada yang diputar") }}
@@ -197,9 +215,16 @@ async function saveMac(): Promise<void> {
         <SkipForward :size="20" />
       </button>
 
-      <!-- volume (desktop) -->
+      <!-- volume (desktop): icon toggles mute, slider drags over WS (250ms) -->
       <div class="hidden w-20 items-center gap-1.5 sm:flex">
-        <Volume2 :size="14" class="shrink-0 text-neutral-500" />
+        <button
+          class="shrink-0 text-neutral-500 transition hover:text-white"
+          :title="volumeLocal > 0 ? t('mute') : t('unmute')"
+          @click="toggleMute"
+        >
+          <Volume2 v-if="volumeLocal > 0" :size="14" />
+          <VolumeX v-else :size="14" />
+        </button>
         <input
           type="range"
           min="0"

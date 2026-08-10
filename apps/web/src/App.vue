@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from "vue";
 import { Music, Search as SearchIcon, FolderOpen, Heart, History as HistoryIcon, LogOut, CircleUser, Settings as SettingsIcon } from "lucide-vue-next";
-import { store, refreshDevices, startPolling, stopPolling, logout } from "./composables/useMusic";
+import { store, refreshDevices, startPolling, stopPolling, logout, sendWsCommand } from "./composables/useMusic";
+import { api } from "./lib/api";
 import { t } from "./i18n";
 import Login from "./components/Login.vue";
 import Search from "./components/Search.vue";
@@ -31,6 +32,7 @@ function openSettings(): void {
 
 onMounted(() => {
   document.addEventListener("click", onClickOutside);
+  window.addEventListener("keydown", onKeydown);
   if (store.authed) {
     void refreshDevices();
     startPolling();
@@ -40,7 +42,29 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener("click", onClickOutside);
   stopPolling();
+  window.removeEventListener("keydown", onKeydown);
 });
+
+/** Global keyboard shortcuts: Space play/pause, ←/→ seek ±5s, ↑/↓ volume. */
+function onKeydown(e: KeyboardEvent): void {
+  if (!store.authed || !store.selectedDevice || !store.playback) return;
+  const el = document.activeElement as HTMLElement | null;
+  if (el && ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName)) return;
+  const d = store.selectedDevice;
+  if (e.key === " ") {
+    e.preventDefault();
+    const playing = store.playback.state === "playing";
+    void (playing ? api.pause(d) : api.resume(d));
+  } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    e.preventDefault();
+    const pos = store.playback.position ?? 0;
+    void api.seek(d, Math.max(0, pos + (e.key === "ArrowRight" ? 5 : -5)));
+  } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+    e.preventDefault();
+    const vol = Math.min(100, Math.max(0, (store.playback.volume ?? 70) + (e.key === "ArrowUp" ? 5 : -5)));
+    sendWsCommand({ type: "setVolume", deviceId: d, volume: vol });
+  }
+}
 
 const tabs: Array<{ id: Tab; label: string; icon: typeof SearchIcon }> = [
   { id: "search", label: t("tab.search"), icon: SearchIcon },

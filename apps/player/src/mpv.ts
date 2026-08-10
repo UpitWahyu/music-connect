@@ -67,9 +67,20 @@ export class Mpv extends EventEmitter {
         // no stale socket — fine
       }
     }
-    this.proc = spawn(bin, ["--no-video", "--idle=yes", this.ipcArg], {
-      stdio: ["ignore", "ignore", "pipe"],
-    });
+    this.proc = spawn(
+      bin,
+      [
+        "--no-video",
+        "--idle=yes",
+        // audio-only: yt-dlp picks the best audio stream only (no video track) —
+        // much less bandwidth, faster start (YouTube Music: opus ~130kbps)
+        "--ytdl-format=bestaudio/best",
+        this.ipcArg,
+      ],
+      {
+        stdio: ["ignore", "ignore", "pipe"],
+      },
+    );
     this.proc.stderr?.on("data", (d: Buffer) => this.emit("stderr", d.toString()));
     this.proc.on("error", (err) => {
       // spawn failure (e.g. mpv binary missing) — give a clear hint

@@ -58,6 +58,9 @@ jobs:
       - name: Push database schema
         run: pnpm db:push
 
+      - name: Build workspace packages (types/shared/protocol → dist)
+        # dist is gitignored, but typecheck resolves @music-connect/* to dist/*.d.ts
+        run: pnpm -r --filter './packages/*' build
       - name: Typecheck
         run: pnpm typecheck
 

@@ -41,7 +41,8 @@ onMounted(() => {
           <div class="truncate text-xs text-neutral-500">{{ f.artist }}</div>
         </div>
         <button
-          class="rounded-lg bg-green-500/90 p-1.5 text-black transition hover:bg-green-400"
+          class="rounded-lg bg-green-500/90 p-1.5 text-black transition hover:bg-green-400 disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="!store.selectedDevice"
           @click="playTrack(f.trackId, f.title, f.artist)"
         >
           <Play :size="13" />

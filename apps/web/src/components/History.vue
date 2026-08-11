@@ -57,7 +57,8 @@ onMounted(load);
           </div>
         </div>
         <button
-          class="rounded-lg bg-green-500/90 p-1.5 text-black transition hover:bg-green-400"
+          class="rounded-lg bg-green-500/90 p-1.5 text-black transition hover:bg-green-400 disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="!store.selectedDevice"
           @click="playTrack(h.trackId, h.title, h.artist)"
         >
           <Play :size="13" />

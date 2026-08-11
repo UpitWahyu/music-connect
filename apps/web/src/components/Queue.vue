@@ -178,8 +178,9 @@ async function togglePlaylist(playlistId: string): Promise<void> {
       </h2>
       <button
         v-if="store.queue.length > 0"
-        class="flex h-7 w-7 items-center justify-center rounded-full text-neutral-500 transition hover:bg-red-500/10 hover:text-red-400"
+        class="flex h-7 w-7 items-center justify-center rounded-full text-neutral-500 transition hover:bg-red-500/10 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-40"
         :title="t('clearQueue')"
+        :disabled="!store.selectedDevice"
         @click="confirmClear = true"
       >
         <Trash2 :size="14" />
@@ -193,7 +194,7 @@ async function togglePlaylist(playlistId: string): Promise<void> {
         :key="item.id"
         class="relative flex cursor-grab items-center gap-3 py-2 text-sm transition active:cursor-grabbing"
         :class="dragOverId === item.id ? 'border-t-2 border-green-500' : 'border-t border-transparent hover:bg-white/5'"
-        draggable="true"
+        :draggable="!!store.selectedDevice"
         @dragstart="onDragStart(item.id, $event)"
         @dragover="onDragOver(item.id, $event)"
         @dragend="onDragEnd"
@@ -203,14 +204,14 @@ async function togglePlaylist(playlistId: string): Promise<void> {
         <div class="flex shrink-0 flex-col">
           <button
             class="rounded p-0.5 text-neutral-600 transition hover:bg-white/10 hover:text-white disabled:opacity-30"
-            :disabled="i === 0"
+            :disabled="i === 0 || !store.selectedDevice"
             @click="moveItem(item.id, -1)"
           >
             <ChevronUp :size="12" />
           </button>
           <button
             class="rounded p-0.5 text-neutral-600 transition hover:bg-white/10 hover:text-white disabled:opacity-30"
-            :disabled="i === store.queue.length - 1"
+            :disabled="i === store.queue.length - 1 || !store.selectedDevice"
             @click="moveItem(item.id, 1)"
           >
             <ChevronDown :size="12" />
@@ -218,9 +219,10 @@ async function togglePlaylist(playlistId: string): Promise<void> {
         </div>
 
         <button
-          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition"
+          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-40"
           :class="i === playingIndex ? 'bg-green-500 text-black' : 'bg-white/10 text-neutral-300 hover:bg-green-500 hover:text-black'"
           :title="i === playingIndex ? t('nowPlaying') : t('playNow')"
+          :disabled="!store.selectedDevice"
           @click="playItem(item.id)"
         >
           <Play v-if="i !== playingIndex" :size="12" class="ml-0.5" />

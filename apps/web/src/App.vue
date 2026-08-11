@@ -137,16 +137,13 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof SearchIcon }> = [
       </button>
     </nav>
 
-    <div v-if="store.selectedDevice">
+    <div>
       <Search v-if="tab === 'search'" />
       <Playlists v-if="tab === 'playlists'" />
       <Favorites v-if="tab === 'favorites'" />
       <History v-if="tab === 'history'" />
       <Queue v-if="tab !== 'history'" />
     </div>
-    <p v-else class="mt-24 text-center text-sm text-neutral-500">
-      {{ t("selectDeviceHint") }}
-    </p>
   </div>
 
   <!-- player bar: flat, stuck to the bottom (Spotify style) -->

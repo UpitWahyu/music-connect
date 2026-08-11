@@ -106,8 +106,9 @@ async function removeTrack(trackId: string): Promise<void> {
             <span class="text-xs text-neutral-500">({{ p._count.tracks }})</span>
           </button>
           <button
-            class="rounded-lg bg-green-500/90 p-1.5 text-black transition hover:bg-green-400"
+            class="rounded-lg bg-green-500/90 p-1.5 text-black transition hover:bg-green-400 disabled:cursor-not-allowed disabled:opacity-40"
             title="Putar"
+            :disabled="!store.selectedDevice"
             @click="playPlaylist(p.id)"
           >
             <Play :size="13" />

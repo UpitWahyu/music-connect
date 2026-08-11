@@ -212,7 +212,6 @@ async function togglePlaylist(playlistId: string): Promise<void> {
 
 <template>
   <div
-    v-if="store.selectedDevice"
     class="fixed inset-x-0 bottom-0 z-50 border-t border-white/5 bg-[#101019]/95 shadow-[0_-8px_30px_rgba(0,0,0,0.45)] backdrop-blur"
   >
     <!-- seek slider (Spotify style: preview while dragging, commit on release) -->
@@ -228,7 +227,8 @@ async function togglePlaylist(playlistId: string): Promise<void> {
         step="1"
         :value="seekDisplay"
         :style="seekBarStyle"
-        class="seek-slider h-1.5 w-full cursor-pointer appearance-none rounded-full"
+        class="seek-slider h-1.5 w-full cursor-pointer appearance-none rounded-full disabled:cursor-not-allowed disabled:opacity-40"
+        :disabled="!store.selectedDevice"
         @pointerdown="onSeekStart"
         @input="onSeekInput"
         @change="onSeekCommit"
@@ -252,7 +252,7 @@ async function togglePlaylist(playlistId: string): Promise<void> {
         />
         <div class="min-w-0 flex-1">
           <div class="truncate text-sm font-semibold">
-            {{ track?.title ?? (thisDevice && !thisDevice.online ? "Device offline" : "Tidak ada yang diputar") }}
+            {{ track?.title ?? (thisDevice ? (thisDevice.online ? "Tidak ada yang diputar" : "Device offline") : "Pilih device untuk mulai") }}
           </div>
           <div class="truncate text-xs" :class="thisDevice && !thisDevice.online && !track ? 'text-amber-500/80' : 'text-neutral-500'">
             {{
@@ -262,7 +262,9 @@ async function togglePlaylist(playlistId: string): Promise<void> {
                   ? `Musik berjalan di ${activeOtherDevice.name || activeOtherDevice.id} — pilih di dropdown untuk pindah`
                   : thisDevice && !thisDevice.online
                     ? "Device ini offline — nyalakan player-nya dulu"
-                    : "Pilih tab Cari untuk mulai"
+                    : thisDevice
+                      ? "Pilih tab Cari untuk mulai"
+                      : "Pilih device dulu di panel ⋯"
             }}
           </div>
         </div>
@@ -270,30 +272,41 @@ async function togglePlaylist(playlistId: string): Promise<void> {
 
       <!-- controls -->
       <button
-        class="rounded-full p-1.5 transition"
+        class="rounded-full p-1.5 transition disabled:cursor-not-allowed disabled:opacity-40"
         :class="store.playback?.shuffle ? 'text-green-500' : 'text-neutral-400 hover:text-white'"
         :title="t('shuffle')"
+        :disabled="!store.selectedDevice"
         @click="toggleShuffle"
       >
         <Shuffle :size="16" />
       </button>
-      <button class="rounded-full p-1.5 text-neutral-300 transition hover:text-white" @click="transportPrevious">
+      <button
+        class="rounded-full p-1.5 text-neutral-300 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+        :disabled="!store.selectedDevice"
+        @click="transportPrevious"
+      >
         <SkipBack :size="20" />
       </button>
       <button
-        class="flex h-10 w-10 items-center justify-center rounded-full bg-green-500 text-black shadow-lg shadow-green-500/25 transition hover:scale-105 hover:bg-green-400"
+        class="flex h-10 w-10 items-center justify-center rounded-full bg-green-500 text-black shadow-lg shadow-green-500/25 transition hover:scale-105 hover:bg-green-400 disabled:cursor-not-allowed disabled:opacity-40"
+        :disabled="!store.selectedDevice"
         @click="togglePlay"
       >
         <Pause v-if="isPlaying" :size="18" />
         <Play v-else :size="18" class="ml-0.5" />
       </button>
-      <button class="rounded-full p-1.5 text-neutral-300 transition hover:text-white" @click="transportNext">
+      <button
+        class="rounded-full p-1.5 text-neutral-300 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+        :disabled="!store.selectedDevice"
+        @click="transportNext"
+      >
         <SkipForward :size="20" />
       </button>
       <button
-        class="rounded-full p-1.5 transition"
+        class="rounded-full p-1.5 transition disabled:cursor-not-allowed disabled:opacity-40"
         :class="store.playback?.repeat !== 'off' ? 'text-green-500' : 'text-neutral-400 hover:text-white'"
         :title="store.playback?.repeat === 'one' ? t('repeatOne') : store.playback?.repeat === 'all' ? t('repeatAll') : t('repeatOff')"
+        :disabled="!store.selectedDevice"
         @click="cycleRepeat"
       >
         <Repeat1 v-if="store.playback?.repeat === 'one'" :size="16" />
@@ -303,8 +316,9 @@ async function togglePlaylist(playlistId: string): Promise<void> {
       <!-- volume (desktop): icon toggles mute, slider drags over WS (250ms) -->
       <div class="hidden w-20 items-center gap-1.5 sm:flex">
         <button
-          class="shrink-0 text-neutral-500 transition hover:text-white"
+          class="shrink-0 text-neutral-500 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
           :title="volumeLocal > 0 ? t('mute') : t('unmute')"
+          :disabled="!store.selectedDevice"
           @click="toggleMute"
         >
           <Volume2 v-if="volumeLocal > 0" :size="14" />

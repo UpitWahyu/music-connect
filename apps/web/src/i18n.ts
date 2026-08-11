@@ -14,7 +14,6 @@ const dict: Record<Lang, Dict> = {
     menu: "Menu",
     settings: "Pengaturan",
     logout: "Logout",
-    selectDeviceHint: "Pilih device untuk mulai mendengarkan",
     // settings
     settingsTitle: "Pengaturan",
     settingsLanguage: "Bahasa",
@@ -100,7 +99,6 @@ const dict: Record<Lang, Dict> = {
     menu: "Menu",
     settings: "Settings",
     logout: "Logout",
-    selectDeviceHint: "Select a device to start listening",
     settingsTitle: "Settings",
     settingsLanguage: "Language",
     settingsAccount: "Username",

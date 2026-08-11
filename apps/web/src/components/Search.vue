@@ -198,15 +198,17 @@ async function playLink(): Promise<void> {
               </div>
               <div class="flex shrink-0 items-center gap-1">
                 <button
-                  class="rounded-lg bg-green-500/90 p-1.5 text-black transition hover:bg-green-400"
+                  class="rounded-lg bg-green-500/90 p-1.5 text-black transition hover:bg-green-400 disabled:cursor-not-allowed disabled:opacity-40"
                   title="Putar sekarang"
+                  :disabled="!store.selectedDevice"
                   @click="playNow(t)"
                 >
                   <Play :size="14" />
                 </button>
                 <button
-                  class="rounded-lg p-1.5 text-neutral-400 transition hover:bg-white/10 hover:text-white"
+                  class="rounded-lg p-1.5 text-neutral-400 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                   title="Tambahkan ke queue"
+                  :disabled="!store.selectedDevice"
                   @click="addToQueue(t)"
                 >
                   <Plus :size="14" />
@@ -279,8 +281,8 @@ async function playLink(): Promise<void> {
         <p v-if="linkError" class="mt-2 text-xs text-red-400">{{ linkError }}</p>
         <div class="mt-4 flex gap-2">
           <button
-            class="flex-1 rounded-xl bg-green-500 px-4 py-2.5 text-sm font-semibold text-black transition hover:bg-green-400 disabled:opacity-50"
-            :disabled="linkBusy || !linkUrl.trim()"
+            class="flex-1 rounded-xl bg-green-500 px-4 py-2.5 text-sm font-semibold text-black transition hover:bg-green-400 disabled:cursor-not-allowed disabled:opacity-40"
+            :disabled="linkBusy || !linkUrl.trim() || !store.selectedDevice"
             @click="playLink"
           >
             {{ linkBusy ? t("loading") : t("play") }}

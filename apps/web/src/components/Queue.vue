@@ -168,8 +168,9 @@ async function togglePlaylist(playlistId: string): Promise<void> {
 </script>
 
 <template>
-  <section class="mt-6 rounded-2xl border border-white/5 bg-[#14141c] p-4">
-    <div class="mb-2 flex items-center justify-between">
+  <!-- fixed-height box: only the queue list scrolls, never the whole page -->
+  <section class="mt-6 flex max-h-[45vh] flex-col rounded-2xl border border-white/5 bg-[#14141c] p-4">
+    <div class="mb-2 flex shrink-0 items-center justify-between">
       <h2 class="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">
         <ListMusic :size="14" />
         {{ t("queue") }}
@@ -185,6 +186,7 @@ async function togglePlaylist(playlistId: string): Promise<void> {
       </button>
     </div>
 
+    <div class="queue-scroll min-h-0 flex-1 overflow-y-auto pr-1">
     <ul v-if="store.queue.length" class="divide-y divide-white/5">
       <li
         v-for="(item, i) in store.queue"
@@ -284,6 +286,7 @@ async function togglePlaylist(playlistId: string): Promise<void> {
       {{ t("moveToEnd") }}
     </div>
     <p v-else-if="!store.queue.length" class="py-4 text-center text-sm text-neutral-500">{{ t("queueEmpty") }}</p>
+    </div>
   </section>
 
   <!-- clear-queue confirmation modal -->
@@ -315,3 +318,17 @@ async function togglePlaylist(playlistId: string): Promise<void> {
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+/* slim scrollbar for the queue box */
+.queue-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.queue-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+}
+.queue-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+</style>

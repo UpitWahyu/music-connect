@@ -16,8 +16,10 @@ function generatePairingCode(): string {
  * once and receives a long-lived device token (D-03, D-10).
  */
 export async function deviceRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/api/devices", async () => {
-    const devices = await prisma.device.findMany();
+  app.get("/api/devices", async (req) => {
+    const user = req.user as { sub?: string } | undefined;
+    // multi-user: only the caller's own devices
+    const devices = await prisma.device.findMany({ where: { userId: user?.sub ?? "__none__" } });
     const online = new Set(await redis.smembers(RedisKeys.devicesOnline()));
     // never expose tokenHash to controllers
     return devices.map(({ tokenHash: _omit, ...d }) => ({ ...d, online: online.has(d.id) }));

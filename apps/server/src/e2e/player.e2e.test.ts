@@ -16,6 +16,7 @@ let port: number;
 let controllerToken: string;
 
 const USER = "test-e2e-user";
+const USER2 = "test-e2e-user-2"; // multi-user scoping tests
 const DEVICE = "test-device-e2e";
 const DEVICE_B = "test-device-e2e-b";
 const DEVICE_C = "test-device-e2e-c";
@@ -109,10 +110,15 @@ beforeAll(async () => {
     update: { passwordHash: hashPassword("e2epass123") },
     create: { id: USER, username: "e2etest", passwordHash: hashPassword("e2epass123"), role: "admin" },
   });
+  await prisma.user.upsert({
+    where: { id: USER2 },
+    update: { passwordHash: hashPassword("e2epass456") },
+    create: { id: USER2, username: "e2etest2", passwordHash: hashPassword("e2epass456"), role: "user" },
+  });
   await prisma.device.upsert({
     where: { id: DEVICE },
-    update: { userId: null, name: "QA E2E", tokenHash: sha256(DEV_TOKEN) },
-    create: { id: DEVICE, name: "QA E2E", type: "qa", tokenHash: sha256(DEV_TOKEN) },
+    update: { userId: USER, name: "QA E2E", tokenHash: sha256(DEV_TOKEN) },
+    create: { id: DEVICE, name: "QA E2E", type: "qa", tokenHash: sha256(DEV_TOKEN), userId: USER },
   });
   for (const [id, tok] of [
     [DEVICE_B, DEV_TOKEN_B],
@@ -120,8 +126,8 @@ beforeAll(async () => {
   ] as const) {
     await prisma.device.upsert({
       where: { id },
-      update: { userId: null, name: `QA E2E ${id}`, tokenHash: sha256(tok) },
-      create: { id, name: `QA E2E ${id}`, type: "qa", tokenHash: sha256(tok) },
+      update: { userId: USER, name: `QA E2E ${id}`, tokenHash: sha256(tok) },
+      create: { id, name: `QA E2E ${id}`, type: "qa", tokenHash: sha256(tok), userId: USER },
     });
   }
   app = await buildApp();
@@ -140,7 +146,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await prisma.device.deleteMany({ where: { id: { in: [DEVICE, DEVICE_B, DEVICE_C] } } }).catch(() => null);
-  await prisma.user.deleteMany({ where: { id: USER } }).catch(() => null);
+  await prisma.user.deleteMany({ where: { id: { in: [USER, USER2] } } }).catch(() => null);
   await app.close();
   redis.disconnect(); // synchronous — no unhandled rejections from late WS handlers
   await prisma.$disconnect();
@@ -452,6 +458,80 @@ describe("hybrid realtime (WS push)", () => {
     expect(ev.device.id).toBe(DEVICE);
     expect(ev.device.online).toBe(true);
     c.close();
+    p.close();
+  });
+});
+
+describe("multi-user scoping", () => {
+  let token2: string;
+
+  beforeAll(async () => {
+    const r = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { username: "e2etest2", password: "e2epass456" },
+    });
+    token2 = JSON.parse(r.body).token as string;
+  });
+
+  it("another user cannot control someone else's device (403)", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/devices/${DEVICE}/pause`,
+      headers: { authorization: `Bearer ${token2}` },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).error).toBe("DEVICE_FORBIDDEN");
+  });
+
+  it("device list is scoped to the caller", async () => {
+    const mine = await app.inject({
+      method: "GET",
+      url: "/api/devices",
+      headers: { authorization: `Bearer ${controllerToken}` },
+    });
+    const theirs = await app.inject({
+      method: "GET",
+      url: "/api/devices",
+      headers: { authorization: `Bearer ${token2}` },
+    });
+    expect(JSON.parse(mine.body).some((d: { id: string }) => d.id === DEVICE)).toBe(true);
+    expect(JSON.parse(theirs.body).some((d: { id: string }) => d.id === DEVICE)).toBe(false);
+  });
+
+  it("owner can still control their device", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/devices/${DEVICE}/pause`,
+      headers: { authorization: `Bearer ${controllerToken}` },
+    });
+    expect([200, 409]).toContain(res.statusCode); // 409 if the player is offline
+  });
+
+  it("broadcast is scoped: other user's controller receives no player.state", async () => {
+    const c1 = new FakeController();
+    await c1.opened;
+    await c1.auth(controllerToken);
+    await c1.next("auth.ok");
+    const c2 = new FakeController();
+    await c2.opened;
+    await c2.auth(token2);
+    await c2.next("auth.ok");
+
+    const p = new FakePlayer(url());
+    await p.opened;
+    await p.auth(DEVICE, DEV_TOKEN);
+    await p.next("player.ready");
+    await p.next("player.setVolume");
+
+    await api("POST", `/api/devices/${DEVICE}/play`, { trackId: "M1", track: track("M1") });
+    await p.next("player.load");
+    p.report({ trackId: "M1", status: "playing", position: 3, queueIndex: 0 });
+
+    await c1.next("player.state"); // owner's controller receives it
+    await expect(c2.next("player.state", 1500)).rejects.toThrow("timeout"); // other user: silence
+    c1.close();
+    c2.close();
     p.close();
   });
 });

@@ -34,9 +34,9 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
       if (!authed) {
         if (msg.type === "auth" && typeof msg.token === "string") {
           try {
-            app.jwt.verify(msg.token);
+            const payload = app.jwt.verify(msg.token) as { sub?: string };
             authed = true;
-            addController(s);
+            addController(s, payload.sub ?? null); // multi-user: scope broadcasts
             s.send(JSON.stringify({ type: "auth.ok" }));
           } catch {
             s.close(4401, "UNAUTHORIZED");
@@ -126,7 +126,7 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
               return;
             }
             deviceId = id;
-            registerPlayer(id, s);
+            registerPlayer(id, s, device.userId ?? null); // owner scopes broadcasts
             await deviceService.markOnline(id);
             s.send(JSON.stringify({ type: "player.ready" }));
             // the stored per-device volume sync — mpv defaults to 100% and

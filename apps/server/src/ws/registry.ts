@@ -13,7 +13,10 @@ export interface SocketLike {
 }
 
 const players = new Map<string, SocketLike>();
-const controllers = new Set<SocketLike>();
+// controller socket → owning user id (from the JWT); null = legacy/unbound
+const controllers = new Map<SocketLike, string | null>();
+// deviceId → owning user id (learned at player auth); used to scope broadcasts
+const deviceOwner = new Map<string, string | null>();
 
 /** D-02: commands go over the player's WebSocket — no Redis pub/sub needed in V1. */
 export function sendToPlayer(deviceId: string, msg: PlayerCommand): boolean {
@@ -23,8 +26,9 @@ export function sendToPlayer(deviceId: string, msg: PlayerCommand): boolean {
   return true;
 }
 
-export function registerPlayer(deviceId: string, socket: SocketLike): void {
+export function registerPlayer(deviceId: string, socket: SocketLike, ownerId: string | null = null): void {
   players.set(deviceId, socket);
+  deviceOwner.set(deviceId, ownerId);
   setGauge("music_active_players", players.size);
 }
 
@@ -46,8 +50,8 @@ export function isPlayerRegistered(deviceId: string): boolean {
   return !!s && s.readyState === 1;
 }
 
-export function addController(socket: SocketLike): void {
-  controllers.add(socket);
+export function addController(socket: SocketLike, userId: string | null = null): void {
+  controllers.set(socket, userId);
   setGauge("music_active_controllers", controllers.size);
 }
 
@@ -61,7 +65,18 @@ export function activePlayerCount(): number {
   return players.size;
 }
 
+/**
+ * Multi-user: deliver an event ONLY to controllers who own the device it
+ * refers to. Legacy devices without an owner broadcast to everyone (the
+ * pre-multi-user behaviour), keeping single-user setups unchanged.
+ */
 export function broadcastToControllers(event: ServerEvent): void {
   const data = JSON.stringify(event);
-  for (const c of controllers) if (c.readyState === 1) c.send(data);
+  const deviceId = "deviceId" in event && typeof event.deviceId === "string" ? event.deviceId : null;
+  const owner = deviceId ? deviceOwner.get(deviceId) : null;
+  for (const [c, userId] of controllers) {
+    if (c.readyState !== 1) continue;
+    // unbound device → broadcast; bound device → only the owner's controllers
+    if (owner === null || owner === undefined || userId === owner) c.send(data);
+  }
 }

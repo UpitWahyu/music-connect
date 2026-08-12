@@ -77,6 +77,21 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
   });
 
+  // Multi-user: every /api/devices/:id/* route (except pairing-code generation,
+  // which may target a brand-new device) must operate on a device the caller owns.
+  app.addHook("preHandler", async (req, reply) => {
+    const url = req.url.split("?")[0] ?? "";
+    const m = url.match(/^\/api\/devices\/([^/]+)(\/.*)?$/);
+    if (!m) return;
+    const id = decodeURIComponent(m[1] ?? "");
+    if (m[2] === "/pair") return; // generate pairing code — device may not exist yet
+    const user = req.user as { sub?: string } | undefined;
+    if (!user?.sub) return reply.code(401).send({ error: "UNAUTHORIZED" });
+    const device = await prisma.device.findUnique({ where: { id }, select: { userId: true } });
+    if (!device) return reply.code(404).send({ error: "DEVICE_NOT_FOUND" });
+    if (device.userId !== user.sub) return reply.code(403).send({ error: "DEVICE_FORBIDDEN" });
+  });
+
   await app.register(authRoutes);
   await app.register(deviceRoutes);
   await app.register(searchRoutes);

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, ref, watch, onUnmounted } from "vue";
 import {
   Play,
   Pause,
@@ -38,7 +38,49 @@ const progressPct = computed(() => {
 const seekLocal = ref(0);
 const seekDragging = ref(false);
 const trackDuration = computed(() => track.value?.duration ?? 0);
-const seekDisplay = computed(() => (seekDragging.value ? seekLocal.value : pb.value?.position ?? 0));
+
+// --- smooth local clock: the bar advances every second on its own; the WS
+// push is only a sync anchor (re-anchor on big drift, never per-frame jump) ---
+const localPos = ref(0); // anchor position from the last server report
+const localPosAt = ref(Date.now()); // when the anchor was received
+const posNow = ref(Date.now()); // reactive clock — ticks once per second
+const smoothPos = computed(() => {
+  if (!pb.value) return 0;
+  if (pb.value.state !== "playing") return pb.value.position ?? 0; // static when paused/stopped
+  return localPos.value + (posNow.value - localPosAt.value) / 1000;
+});
+
+// WS push / polling: re-anchor instead of jumping — snap only if drift > 4s
+watch(
+  () => pb.value?.position,
+  (v) => {
+    if (v === undefined) return;
+    if (pb.value?.state === "playing") {
+      const smooth = smoothPos.value;
+      localPos.value = Math.abs(smooth - v) > 4 ? v : smooth;
+    } else {
+      localPos.value = v;
+    }
+    localPosAt.value = Date.now();
+  },
+);
+
+// 1s tick: advance the clock (smooth per-second motion) + drift check
+const posTimer = setInterval(() => {
+  posNow.value = Date.now();
+  if (pb.value?.state === "playing") {
+    const smooth = smoothPos.value;
+    const server = pb.value.position ?? 0;
+    // desynced (seek/transfer elsewhere, pause race) — snap back to server
+    if (Math.abs(smooth - server) > 4) {
+      localPos.value = server;
+      localPosAt.value = posNow.value;
+    }
+  }
+}, 1000);
+onUnmounted(() => clearInterval(posTimer));
+
+const seekDisplay = computed(() => (seekDragging.value ? seekLocal.value : smoothPos.value));
 
 /** Green played portion + faint track, like the old progress line. */
 const seekPct = computed(() => {
@@ -235,7 +277,7 @@ async function togglePlaylist(playlistId: string): Promise<void> {
       />
       <!-- time labels: live current position (while sliding too) + total -->
       <div class="mt-0.5 flex justify-between text-[10px] font-medium text-neutral-500">
-        <span>{{ formatDuration(seekDragging ? seekLocal : (store.playback?.position ?? 0)) }}</span>
+        <span>{{ formatDuration(seekDragging ? seekLocal : smoothPos) }}</span>
         <span>{{ formatDuration(trackDuration) }}</span>
       </div>
     </div>

@@ -31,6 +31,11 @@ export class Mpv extends EventEmitter {
   private readonly isTcp: boolean;
   private readonly host: string;
   private readonly port: number;
+  // 6.1: lifecycle guard — exactly one mpv process, one IPC connection and
+  // one restart timer; shutdown must not trigger the crash-restart path.
+  private started = false;
+  private stopping = false;
+  private restartTimer: NodeJS.Timeout | null = null;
 
   state: MpvState = { paused: false, position: 0, duration: 0, volume: 70, idle: true };
 
@@ -57,6 +62,8 @@ export class Mpv extends EventEmitter {
   }
 
   start(): void {
+    if (this.started || this.stopping) return; // 6.1: single-process guarantee
+    this.started = true;
     // MPV_BIN lets unusual environments (Termux, portable builds) point at mpv
     const bin = process.env.MPV_BIN ?? "mpv";
     if (!this.isTcp) {
@@ -91,14 +98,36 @@ export class Mpv extends EventEmitter {
       this.emit("exit", code);
       this.sock?.destroy();
       this.sock = null;
+      this.started = false;
+      if (this.stopping) return; // graceful shutdown — do not respawn
       console.error(`[player] mpv exited (code ${code}) — restarting in 2s`);
       // mpv may crash on first audio init (common on Android/Termux) — respawn
-      setTimeout(() => this.start(), 2000);
+      this.restartTimer = setTimeout(() => this.start(), 2000);
     });
     this.connectWithRetry();
   }
 
+  /** 6.2: tear mpv down for shutdown — no respawn, no reconnect. */
+  shutdown(): void {
+    if (this.stopping) return;
+    this.stopping = true;
+    if (this.restartTimer) clearTimeout(this.restartTimer);
+    if (this.sock) {
+      this.sock.destroy();
+      this.sock = null;
+    }
+    if (this.proc) {
+      this.proc.kill("SIGTERM");
+      this.proc = null;
+    }
+  }
+
+  get isStopping(): boolean {
+    return this.stopping;
+  }
+
   private connectWithRetry(attempt = 0): void {
+    if (this.stopping) return; // no reconnect after shutdown
     const sock = this.isTcp
       ? createConnection({ host: this.host, port: this.port })
       : createConnection(this.host);

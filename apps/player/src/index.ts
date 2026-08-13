@@ -47,6 +47,20 @@ conn.on("command", (cmd) => {
 });
 conn.connect();
 
+// 6.2: graceful shutdown — stop reconnect timers, mpv, IPC and WebSocket.
+let shuttingDown = false;
+function shutdown(signal: string): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[player] ${signal} received — shutting down`);
+  conn.stop(); // stop WebSocket reconnect timers + close socket
+  mpv.shutdown(); // kill mpv, no respawn
+  // give the loop a beat to flush, then exit cleanly
+  setTimeout(() => process.exit(0), 300);
+}
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+
 // D-06: heartbeat every 5s (presence / last-seen)
 setInterval(() => {
   conn.send({

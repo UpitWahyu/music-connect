@@ -8,6 +8,7 @@ import { buildApp } from "../app.js";
 import { hashPassword } from "../api/auth.js";
 import { sha256 } from "../utils.js";
 import { deviceService } from "../services/device.service.js";
+import { playbackService } from "../services/playback.service.js";
 import type { FastifyInstance } from "fastify";
 import type { Track } from "@music-connect/types";
 
@@ -536,6 +537,43 @@ describe("multi-user scoping", () => {
     c1.close();
     c2.close();
     p.close();
+  });
+
+  it("handoff times out and rolls back when the target never starts (source keeps playing)", async () => {
+    const pa = new FakePlayer(url());
+    await pa.opened;
+    await pa.auth(DEVICE, DEV_TOKEN);
+    await pa.next("player.ready");
+    await pa.next("player.setVolume");
+    await api("POST", `/api/devices/${DEVICE}/queue/clear`, {});
+    await api("POST", `/api/devices/${DEVICE}/play`, { trackId: "H1", track: track("H1") });
+    await pa.next("player.load");
+    pa.report({ trackId: "H1", status: "playing", position: 5, queueIndex: 0 });
+
+    // target C is online but never reports playing (mpv failed / yt-dlp error);
+    // DEVICE_C is used because it has no leftover state from earlier tests
+    const pb = new FakePlayer(url());
+    await pb.opened;
+    await pb.auth(DEVICE_C, DEV_TOKEN_C);
+    await pb.next("player.ready");
+    await pb.next("player.setVolume");
+
+    const t0 = Date.now();
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/devices/${DEVICE}/transfer`,
+      payload: { to: DEVICE_C },
+      headers: { authorization: `Bearer ${controllerToken}` },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(JSON.parse(res.body).error).toBe("HANDOFF_FAILED");
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(4500); // waited for the target ack
+
+    // rollback: source still playing, target never committed
+    expect((await playbackService.getState(DEVICE))?.state).toBe("playing");
+    expect((await playbackService.getState(DEVICE_C))?.state ?? "stopped").toBe("stopped");
+    pa.close();
+    pb.close();
   });
 
   it("WS command from another user is ignored (no effect, socket stays open)", async () => {

@@ -10,6 +10,9 @@ import { queueService } from "./queue.service.js";
 import { musicService } from "./music.service.js";
 import { autoQueueService } from "./auto-queue.service.js";
 
+/** 7.2: how long a handoff waits for the target to prove it is playing. */
+const HANDOFF_TIMEOUT_MS = Number(process.env.HANDOFF_TIMEOUT_MS ?? 5000);
+
 const EMPTY_STATE = (deviceId: string): PlaybackState => ({
   deviceId,
   state: "stopped",
@@ -223,6 +226,7 @@ export class PlaybackService {
    */
   async transfer(from: string, to: string): Promise<void> {
     incCounter("music_playback_commands_total");
+    incCounter("music_handoff_total");
     const state = await this.getState(from);
     if (!state?.track) throw new Error("NOTHING_TO_TRANSFER"); // never clobber the target's state
     const media: MediaRef = { mode: "id", youtubeId: state.track.id };
@@ -232,9 +236,29 @@ export class PlaybackService {
     );
     this.requireOnline(sendToPlayer(to, { type: "player.play" }));
     await autoQueueService.ensure(to, state.track.id);
-    await this.patchState(to, { state: "playing", track: state.track, position: state.position, queueIndex: state.queueIndex });
+    // expose the track metadata on the target immediately (UI shows it), but do
+    // NOT mark it "playing" — only the target's own report proves that (7.1).
+    await this.patchState(to, { track: state.track, position: state.position, queueIndex: state.queueIndex });
+    const started = await this.waitForTarget(to, HANDOFF_TIMEOUT_MS);
+    if (!started) {
+      sendToPlayer(to, { type: "player.stop" });
+      await this.patchState(to, { state: "stopped", position: 0, track: null });
+      incCounter("music_handoff_failure_total");
+      throw new Error("HANDOFF_FAILED");
+    }
+    incCounter("music_handoff_success_total");
     this.requireOnline(sendToPlayer(from, { type: "player.stop" }));
     await this.patchState(from, { state: "stopped", position: 0 });
+  }
+
+  private async waitForTarget(deviceId: string, timeoutMs: number): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const st = await this.getState(deviceId);
+      if (st?.state === "playing") return true; // target's own report
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    return false;
   }
 
   /** Player-reported state (D-08): player owns position; server keeps queue authority. */

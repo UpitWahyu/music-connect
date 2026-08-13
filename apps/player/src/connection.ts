@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import WebSocket from "ws";
-import type { PlayerCommand, PlayerEvent } from "@music-connect/protocol";
+import type { PlayerEvent } from "@music-connect/protocol";
+import { serverCommandSchema } from "@music-connect/protocol";
 
 /**
  * Player ↔ server WebSocket client.
@@ -42,12 +43,29 @@ export class PlayerConnection extends EventEmitter {
     });
 
     ws.on("message", (data) => {
-      const msg = JSON.parse(String(data)) as PlayerCommand | { type: string };
-      if (msg.type === "player.ready") {
+      // 5.1/5.2: defensive parse + runtime validation — the server is remote
+      // input too; a malformed frame must never crash the player process.
+      let raw: unknown;
+      try {
+        raw = JSON.parse(String(data));
+      } catch {
+        console.error("[connection] ignoring malformed server message");
+        return;
+      }
+      const m = raw as { type?: unknown };
+      if (m?.type === "player.ready") {
         this.emit("ready");
         return;
       }
-      this.emit("command", msg as PlayerCommand);
+      const cmd = serverCommandSchema.safeParse(raw);
+      if (!cmd.success) {
+        console.error(
+          "[connection] rejecting invalid server message:",
+          (cmd.error as Error).message,
+        );
+        return;
+      }
+      this.emit("command", cmd.data);
     });
 
     ws.on("close", () => {

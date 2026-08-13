@@ -1,5 +1,10 @@
 import type { FastifyInstance } from "fastify";
-import type { PlayerStateReport } from "@music-connect/protocol";
+import {
+  controllerAuthSchema,
+  controllerCommandSchema,
+  playerAuthSchema,
+  playerEventSchema,
+} from "@music-connect/protocol";
 import { prisma } from "../db/prisma.js";
 import { sha256 } from "../utils.js";
 import { deviceService } from "../services/device.service.js";
@@ -32,28 +37,43 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
     incCounter("music_ws_connections_total");
 
     s.on("message", (raw) => {
-      const msg = JSON.parse(String(raw)) as Record<string, unknown>;
+      // 5.1/5.2: defensive parse + runtime validation — never trust the wire
+      let msg: Record<string, unknown>;
+      try {
+        msg = JSON.parse(String(raw)) as Record<string, unknown>;
+      } catch {
+        s.close(4400, "BAD_JSON");
+        return;
+      }
       if (!authed) {
-        if (msg.type === "auth" && typeof msg.token === "string") {
-          try {
-            const payload = app.jwt.verify(msg.token) as { sub?: string };
-            authed = true;
-            controllerUserId = payload.sub ?? null;
-            addController(s, controllerUserId); // multi-user: scope broadcasts
-            s.send(JSON.stringify({ type: "auth.ok" }));
-          } catch {
-            s.close(4401, "UNAUTHORIZED");
-          }
-        } else {
+        const parsed = controllerAuthSchema.safeParse(msg);
+        if (!parsed.success) {
           s.close(4401, "AUTH_FIRST");
+          return;
+        }
+        try {
+          const payload = app.jwt.verify(parsed.data.token) as { sub?: string };
+          authed = true;
+          controllerUserId = payload.sub ?? null;
+          addController(s, controllerUserId); // multi-user: scope broadcasts
+          s.send(JSON.stringify({ type: "auth.ok" }));
+        } catch {
+          s.close(4401, "UNAUTHORIZED");
         }
         return;
       }
       // hybrid realtime: controllers may send lightweight commands over WS.
+      // 5.1: validate shape first; unknown/malformed commands close the socket.
+      const parsed = controllerCommandSchema.safeParse(msg);
+      if (!parsed.success) {
+        s.close(4400, "BAD_MESSAGE");
+        return;
+      }
+      const cmd = parsed.data;
       // Every command is ownership-checked (multi-user): a controller may
       // only touch devices it owns — same rule as the REST preHandler (3.1).
-      const deviceId = typeof msg.deviceId === "string" ? msg.deviceId : "";
-      if (!deviceId || !controllerUserId) return;
+      const deviceId = cmd.deviceId;
+      if (!controllerUserId) return;
       void (async () => {
         try {
           await authorizationService.assertDeviceAccess(controllerUserId as string, deviceId);
@@ -65,15 +85,11 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
             /* player offline etc — the web falls back to REST on failure */
           });
         };
-        if (msg.type === "setVolume") {
-          const volume = msg.volume;
-          if (typeof volume === "number" && Number.isFinite(volume)) {
-            const clamped = Math.min(100, Math.max(0, Math.round(volume)));
-            run(playbackService.setVolume(deviceId, clamped)); // persists even if offline
-          }
+        if (cmd.type === "setVolume") {
+          run(playbackService.setVolume(deviceId, cmd.volume)); // persists even if offline
           return;
         }
-        switch (msg.type) {
+        switch (cmd.type) {
           case "pause":
             run(playbackService.pause(deviceId));
             break;
@@ -87,15 +103,13 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
             run(playbackService.previous(deviceId));
             break;
           case "seek":
-            if (typeof msg.position === "number") run(playbackService.seek(deviceId, msg.position));
+            run(playbackService.seek(deviceId, cmd.position));
             break;
           case "shuffle":
-            if (typeof msg.shuffle === "boolean") run(playbackService.setShuffle(deviceId, msg.shuffle));
+            run(playbackService.setShuffle(deviceId, cmd.shuffle));
             break;
           case "repeat":
-            if (msg.mode === "off" || msg.mode === "all" || msg.mode === "one") {
-              run(playbackService.setRepeat(deviceId, msg.mode));
-            }
+            run(playbackService.setRepeat(deviceId, cmd.mode));
             break;
         }
       })();
@@ -119,20 +133,20 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
         return;
       }
       if (!deviceId) {
-        if (
-          msg.type === "player.auth" &&
-          typeof msg.deviceId === "string" &&
-          typeof msg.token === "string"
-        ) {
-          const id = msg.deviceId;
-          void (async () => {
-            // PRD §30: token validated against the stored hash (sha256)
-            const device = await prisma.device.findUnique({ where: { id } });
-            if (!device || device.tokenHash !== sha256(msg.token as string)) {
-              s.close(4401, "UNAUTHORIZED");
-              return;
-            }
-            deviceId = id;
+        const parsed = playerAuthSchema.safeParse(msg);
+        if (!parsed.success) {
+          s.close(4401, "AUTH_FIRST");
+          return;
+        }
+        const id = parsed.data.deviceId;
+        void (async () => {
+          // PRD §30: token validated against the stored hash (sha256)
+          const device = await prisma.device.findUnique({ where: { id } });
+          if (!device || device.tokenHash !== sha256(parsed.data.token)) {
+            s.close(4401, "UNAUTHORIZED");
+            return;
+          }
+          deviceId = id;
             registerPlayer(id, s, device.userId ?? null); // owner scopes broadcasts
             await deviceService.markOnline(id);
             s.send(JSON.stringify({ type: "player.ready" }));
@@ -143,25 +157,29 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
             // hybrid realtime: controllers learn about the device going online
             broadcastToControllers({ type: "device.updated", deviceId: id, device: { id, online: true } });
           })();
-        } else {
-          s.close(4401, "AUTH_FIRST");
-        }
         return;
       }
 
-      if (msg.type === "player.heartbeat") {
+      // 5.1: every authenticated player message must match the protocol
+      const evt = playerEventSchema.safeParse(msg);
+      if (!evt.success) {
+        s.close(4400, "BAD_MESSAGE");
+        return;
+      }
+      const event = evt.data;
+      if (event.type === "player.heartbeat") {
         // PRD §18: heartbeat refreshes presence + last-seen
         void deviceService.markOnline(deviceId);
         return;
       }
 
-      if (msg.type === "player.state" && msg.report && typeof msg.report === "object") {
-        const report = msg.report as unknown as PlayerStateReport;
+      if (event.type === "player.state") {
+        const report = event.report;
         void playbackService.applyPlayerReport(deviceId, report);
         return;
       }
 
-      if (msg.type === "player.trackEnded") {
+      if (event.type === "player.trackEnded") {
         // PRD §25: track finished → server decides (auto-next + auto-queue)
         void playbackService.onTrackEnded(deviceId);
         return;

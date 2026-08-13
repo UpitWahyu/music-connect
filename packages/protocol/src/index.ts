@@ -2,6 +2,7 @@
  * Wire protocol shared by server, player agent and controllers.
  * Single source of truth so event schemas never diverge (PRD §38).
  */
+export * from "./validation.js";
 import type { PlaybackStatus, QueueItem } from "@music-connect/types";
 
 /** Dual-mode media reference (PRD §41 D-01). */

@@ -26,9 +26,11 @@ export class AutoQueueService {
     if (!seedTrackId) return Promise.resolve(0);
     const existing = this.inflight.get(deviceId);
     if (existing) return existing; // concurrent ensure() reuses the in-flight one
-    const p = this.doEnsure(deviceId, seedTrackId).finally(() => {
-      this.inflight.delete(deviceId);
-    });
+    const p = this.doEnsure(deviceId, seedTrackId)
+      .catch(() => 0) // auto-queue is best-effort — never block playback/handoff on the provider
+      .finally(() => {
+        this.inflight.delete(deviceId);
+      });
     this.inflight.set(deviceId, p);
     return p;
   }

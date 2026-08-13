@@ -3,6 +3,7 @@ import { RedisKeys } from "@music-connect/shared";
 import { redis } from "../redis/client.js";
 import type { MusicProvider } from "../providers/music-provider.js";
 import { YoutubeMusicProvider } from "../providers/youtube-music.js";
+import { ResilientProvider } from "../providers/resilient-provider.js";
 
 const SEARCH_TTL_SECONDS = 300; // D-09
 const METADATA_TTL_SECONDS = 86_400; // D-09
@@ -12,7 +13,7 @@ const METADATA_TTL_SECONDS = 86_400; // D-09
  * hammered and queue renders stay fast.
  */
 export class MusicService {
-  private readonly providers: MusicProvider[] = [new YoutubeMusicProvider()];
+  private readonly providers: MusicProvider[] = [new ResilientProvider(new YoutubeMusicProvider())];
 
   /** Single-flight: concurrent identical lookups share one provider call. */
   private readonly inFlight = new Map<string, Promise<unknown>>();

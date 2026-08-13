@@ -372,13 +372,19 @@ describe("handoff (device transfer)", () => {
     a.report({ trackId: "H1", status: "playing", position: 77, queueIndex: 0 });
     await new Promise((r) => setTimeout(r, 300));
 
-    const tr = await api("POST", `/api/devices/${DEVICE}/transfer`, { to: DEVICE_B });
-    expect(tr.statusCode).toBe(200);
+    // fire the transfer without awaiting — the target must report playing
+    // while the handoff is in flight (7.1) or it times out
+    const trPromise = api("POST", `/api/devices/${DEVICE}/transfer`, { to: DEVICE_B });
 
     // B gets load with the carried position + play; A gets stop
     const bLoad = (await b.next("player.load")) as { trackId: string; position: number };
     expect(bLoad.trackId).toBe("H1");
     expect(bLoad.position).toBeCloseTo(77, 0);
+    // 7.1: the target must prove it is playing before the handoff commits
+    b.report({ trackId: "H1", status: "playing", position: 77, queueIndex: 0 });
+
+    const tr = await trPromise;
+    expect(tr.statusCode).toBe(200);
     await b.next("player.play");
     await a.next("player.stop");
 

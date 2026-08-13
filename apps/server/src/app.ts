@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
@@ -19,6 +20,11 @@ import { libraryRoutes } from "./api/library.js";
 export async function buildApp(): Promise<FastifyInstance> {
   // structured JSON logs (pino) — one line per request/event for PM2/observability
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" } });
+
+  // 13: every response carries X-Request-Id so PM2 logs can be correlated
+  app.addHook("onRequest", async (_req, reply) => {
+    reply.header("x-request-id", randomUUID());
+  });
 
   // Accept POST with an empty JSON body (e.g. pause/resume/next without payload)
   app.addContentTypeParser("application/json", { parseAs: "string" }, (_req, body, done) => {

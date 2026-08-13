@@ -12,6 +12,8 @@ import { autoQueueService } from "./auto-queue.service.js";
 
 /** 7.2: how long a handoff waits for the target to prove it is playing. */
 const HANDOFF_TIMEOUT_MS = Number(process.env.HANDOFF_TIMEOUT_MS ?? 5000);
+/** 9: seconds a track must actually play before it counts as history. */
+const HISTORY_MIN_SECONDS = Number(process.env.HISTORY_RECORD_SECONDS ?? 10);
 
 const EMPTY_STATE = (deviceId: string): PlaybackState => ({
   deviceId,
@@ -36,6 +38,8 @@ export class PlaybackService {
   private lastLoadAt = new Map<string, number>();
   /** Per-device in-process mutex for state mutations (4.2). */
   private readonly stateChains = new Map<string, Promise<void>>();
+  /** deviceId → trackId already recorded in history (9: threshold-once). */
+  private readonly historyRecorded = new Map<string, string>();
 
   async play(deviceId: string, trackId?: string, track?: Track): Promise<void> {
     incCounter("music_playback_commands_total");
@@ -283,6 +287,32 @@ export class PlaybackService {
       track,
       updatedAt: report.updatedAt,
     });
+    // 9: record history once the track has actually played ≥ threshold
+    // (10s, or 10% of a short track) — a load that fails to start never counts.
+    if (report.status === "playing" && report.trackId && this.historyRecorded.get(deviceId) !== report.trackId) {
+      const duration = track?.duration ?? report.duration ?? 0;
+      const threshold = duration > 0 ? Math.min(HISTORY_MIN_SECONDS, duration * 0.1) : HISTORY_MIN_SECONDS;
+      if (report.position >= threshold) {
+        this.historyRecorded.set(deviceId, report.trackId);
+        const device = await prisma.device
+          .findUnique({ where: { id: deviceId }, select: { userId: true } })
+          .catch(() => null);
+        if (device?.userId) {
+          await prisma.playbackHistory
+            .create({
+              data: {
+                userId: device.userId,
+                deviceId,
+                trackId: report.trackId,
+                provider: "youtube-music",
+                title: track?.title ?? "",
+                artist: track?.artist ?? "",
+              },
+            })
+            .catch(() => null);
+        }
+      }
+    }
   }
 
   async getState(deviceId: string): Promise<PlaybackState | null> {
@@ -309,24 +339,9 @@ export class PlaybackService {
       void this.enrichTrackMetadata(deviceId, item);
     }
 
-    // Phase 8: record playback history (PRD §29) — device.userId set at pairing
-    const device = await prisma.device
-      .findUnique({ where: { id: deviceId }, select: { userId: true } })
-      .catch(() => null);
-    if (device?.userId) {
-      await prisma.playbackHistory
-        .create({
-          data: {
-            userId: device.userId,
-            deviceId,
-            trackId: item.track.id,
-            provider: item.track.provider,
-            title: item.track.title,
-            artist: item.track.artist,
-          },
-        })
-        .catch(() => null);
-    }
+    // Phase 9: history is recorded once the track actually plays ≥ threshold
+    // (in applyPlayerReport) — not on load (a yt-dlp failure must not count)
+    this.historyRecorded.delete(deviceId);
   }
 
   /** Background metadata enrichment for tracks missing artist (playlist radio). */

@@ -303,6 +303,8 @@ describe("controller → player command flow", () => {
     await p.next("player.ready");
     await p.next("player.setVolume");
 
+    // start from a clean queue (Redis persists across runs / earlier tests)
+    await api("POST", `/api/devices/${DEVICE}/queue/clear`, {});
     await api("POST", `/api/devices/${DEVICE}/queue`, { track: track("A1") });
     await api("POST", `/api/devices/${DEVICE}/queue`, { track: track("A2") });
     await api("POST", `/api/devices/${DEVICE}/play`, { trackId: "A1", track: track("A1") });
@@ -518,13 +520,14 @@ describe("multi-user scoping", () => {
     await c2.auth(token2);
     await c2.next("auth.ok");
 
+    // use DEVICE_B so this test never pollutes DEVICE's queue (test isolation)
     const p = new FakePlayer(url());
     await p.opened;
-    await p.auth(DEVICE, DEV_TOKEN);
+    await p.auth(DEVICE_B, DEV_TOKEN_B);
     await p.next("player.ready");
     await p.next("player.setVolume");
 
-    await api("POST", `/api/devices/${DEVICE}/play`, { trackId: "M1", track: track("M1") });
+    await api("POST", `/api/devices/${DEVICE_B}/play`, { trackId: "M1", track: track("M1") });
     await p.next("player.load");
     p.report({ trackId: "M1", status: "playing", position: 3, queueIndex: 0 });
 
@@ -533,6 +536,28 @@ describe("multi-user scoping", () => {
     c1.close();
     c2.close();
     p.close();
+  });
+
+  it("WS command from another user is ignored (no effect, socket stays open)", async () => {
+    const c2 = new FakeController();
+    await c2.opened;
+    await c2.auth(token2);
+    await c2.next("auth.ok");
+    // user2 tries to pause user1's device over WS — must be silently ignored
+    c2.send({ type: "pause", deviceId: DEVICE });
+    await new Promise((r) => setTimeout(r, 500));
+    expect((c2 as unknown as { ws: { readyState: number } }).ws.readyState).toBe(1); // still connected, no error
+    c2.close();
+  });
+
+  it("cross-user transfer is rejected (target owned by another user)", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/devices/${DEVICE}/transfer`,
+      payload: { to: DEVICE_B },
+      headers: { authorization: `Bearer ${token2}` },
+    });
+    expect(res.statusCode).toBe(403);
   });
 });
 

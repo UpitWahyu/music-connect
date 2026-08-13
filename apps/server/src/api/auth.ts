@@ -21,9 +21,16 @@ export async function ensureSeedUser(): Promise<void> {
   const count = await prisma.user.count();
   if (count > 0) return;
   const username = process.env.ADMIN_USERNAME || "admin";
-  const password = process.env.ADMIN_PASSWORD || "admin";
+  const password = process.env.ADMIN_PASSWORD;
+  if (!password) {
+    // never seed a known-public default credential in production (8.2)
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("[auth] first run requires ADMIN_PASSWORD (no users exist yet)");
+    }
+    console.warn("[auth] first run: seeding default 'admin' password (dev only)");
+  }
   await prisma.user.create({
-    data: { username, passwordHash: hashPassword(password), role: "admin" },
+    data: { username, passwordHash: hashPassword(password ?? "admin"), role: "admin" },
   });
   console.log(`[auth] no users in DB — seeded "${username}" from env (change the password after login)`);
 }
@@ -47,7 +54,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(401).send({ error: "INVALID_CREDENTIALS" });
       }
 
-      const token = app.jwt.sign({ sub: user.id, username: user.username });
+      const token = app.jwt.sign({ sub: user.id, username: user.username }, { expiresIn: "12h" });
       return { token };
     },
   );

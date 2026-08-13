@@ -33,6 +33,11 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
       const { id } = req.params as { id: string };
       const code = generatePairingCode();
       const user = req.user as { sub?: string } | undefined;
+      // 3.3: never let one user hijack an existing device owned by another
+      const existing = await prisma.device.findUnique({ where: { id }, select: { userId: true } });
+      if (existing && existing.userId && user?.sub && existing.userId !== user.sub) {
+        return reply.code(403).send({ error: "DEVICE_FORBIDDEN" });
+      }
       // D-10: 5-minute TTL, one-time use; remember who owns the device
       await redis.set(RedisKeys.pairingCode(code), id, "EX", 300);
       await redis.set(RedisKeys.pairingDevice(id), code, "EX", 300);

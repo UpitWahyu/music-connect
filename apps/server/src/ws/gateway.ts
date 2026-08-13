@@ -4,6 +4,7 @@ import { prisma } from "../db/prisma.js";
 import { sha256 } from "../utils.js";
 import { deviceService } from "../services/device.service.js";
 import { playbackService } from "../services/playback.service.js";
+import { authorizationService } from "../services/authorization.service.js";
 import {
   addController,
   broadcastToControllers,
@@ -27,6 +28,7 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
   app.get("/ws/controller", { websocket: true }, (socket) => {
     const s = socket as unknown as SocketLike;
     let authed = false;
+    let controllerUserId: string | null = null;
     incCounter("music_ws_connections_total");
 
     s.on("message", (raw) => {
@@ -36,7 +38,8 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
           try {
             const payload = app.jwt.verify(msg.token) as { sub?: string };
             authed = true;
-            addController(s, payload.sub ?? null); // multi-user: scope broadcasts
+            controllerUserId = payload.sub ?? null;
+            addController(s, controllerUserId); // multi-user: scope broadcasts
             s.send(JSON.stringify({ type: "auth.ok" }));
           } catch {
             s.close(4401, "UNAUTHORIZED");
@@ -47,51 +50,55 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
         return;
       }
       // hybrid realtime: controllers may send lightweight commands over WS.
-      // volume is the hot path (slider drags); everything else stays on REST.
-      if (msg.type === "setVolume") {
-        const deviceId = typeof msg.deviceId === "string" ? msg.deviceId : "";
-        const volume = msg.volume;
-        if (deviceId && typeof volume === "number" && Number.isFinite(volume)) {
-          const clamped = Math.min(100, Math.max(0, Math.round(volume)));
-          void playbackService.setVolume(deviceId, clamped).catch(() => {
-            // player offline — the value still persists for the next connect
-          });
-        }
-        return;
-      }
-      // lightweight transport commands (same services as the REST routes)
+      // Every command is ownership-checked (multi-user): a controller may
+      // only touch devices it owns — same rule as the REST preHandler (3.1).
       const deviceId = typeof msg.deviceId === "string" ? msg.deviceId : "";
-      if (!deviceId) return;
-      const run = (p: Promise<unknown>): void => {
-        void p.catch(() => {
-          /* player offline etc — the web falls back to REST on failure */
-        });
-      };
-      switch (msg.type) {
-        case "pause":
-          run(playbackService.pause(deviceId));
-          break;
-        case "resume":
-          run(playbackService.resume(deviceId));
-          break;
-        case "next":
-          run(playbackService.next(deviceId));
-          break;
-        case "previous":
-          run(playbackService.previous(deviceId));
-          break;
-        case "seek":
-          if (typeof msg.position === "number") run(playbackService.seek(deviceId, msg.position));
-          break;
-        case "shuffle":
-          if (typeof msg.shuffle === "boolean") run(playbackService.setShuffle(deviceId, msg.shuffle));
-          break;
-        case "repeat":
-          if (msg.mode === "off" || msg.mode === "all" || msg.mode === "one") {
-            run(playbackService.setRepeat(deviceId, msg.mode));
+      if (!deviceId || !controllerUserId) return;
+      void (async () => {
+        try {
+          await authorizationService.assertDeviceAccess(controllerUserId as string, deviceId);
+        } catch {
+          return; // not the caller's device — ignore silently (no info leak)
+        }
+        const run = (p: Promise<unknown>): void => {
+          void p.catch(() => {
+            /* player offline etc — the web falls back to REST on failure */
+          });
+        };
+        if (msg.type === "setVolume") {
+          const volume = msg.volume;
+          if (typeof volume === "number" && Number.isFinite(volume)) {
+            const clamped = Math.min(100, Math.max(0, Math.round(volume)));
+            run(playbackService.setVolume(deviceId, clamped)); // persists even if offline
           }
-          break;
-      }
+          return;
+        }
+        switch (msg.type) {
+          case "pause":
+            run(playbackService.pause(deviceId));
+            break;
+          case "resume":
+            run(playbackService.resume(deviceId));
+            break;
+          case "next":
+            run(playbackService.next(deviceId));
+            break;
+          case "previous":
+            run(playbackService.previous(deviceId));
+            break;
+          case "seek":
+            if (typeof msg.position === "number") run(playbackService.seek(deviceId, msg.position));
+            break;
+          case "shuffle":
+            if (typeof msg.shuffle === "boolean") run(playbackService.setShuffle(deviceId, msg.shuffle));
+            break;
+          case "repeat":
+            if (msg.mode === "off" || msg.mode === "all" || msg.mode === "one") {
+              run(playbackService.setRepeat(deviceId, msg.mode));
+            }
+            break;
+        }
+      })();
     });
 
     s.on("close", () => removeController(s));
@@ -134,7 +141,7 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
             const vol = await deviceService.getVolume(id);
             s.send(JSON.stringify({ type: "player.setVolume", volume: vol }));
             // hybrid realtime: controllers learn about the device going online
-            broadcastToControllers({ type: "device.updated", device: { id, online: true } });
+            broadcastToControllers({ type: "device.updated", deviceId: id, device: { id, online: true } });
           })();
         } else {
           s.close(4401, "AUTH_FIRST");
@@ -166,7 +173,7 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
         unregisterPlayer(deviceId, s);
         void deviceService.markOffline(deviceId);
         // hybrid realtime: controllers learn about the device going offline
-        broadcastToControllers({ type: "device.updated", device: { id: deviceId, online: false } });
+        broadcastToControllers({ type: "device.updated", deviceId, device: { id: deviceId, online: false } });
       }
     });
   });

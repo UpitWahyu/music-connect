@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { Track } from "@music-connect/types";
 import { extractPlaylistId } from "../utils.js";
 import { playbackService } from "../services/playback.service.js";
+import { authorizationService } from "../services/authorization.service.js";
 
 function fail(reply: { code: (n: number) => unknown }, e: unknown) {
   return (reply.code(409) as unknown as { send: (o: unknown) => unknown }).send({
@@ -131,6 +132,14 @@ export async function playbackRoutes(app: FastifyInstance): Promise<void> {
     const { id } = req.params as { id: string };
     const body = (req.body ?? {}) as { to?: string };
     if (!body.to) return reply.code(400).send({ error: "MISSING_TARGET" });
+    const user = req.user as { sub?: string } | undefined;
+    // 3.2: the target device must belong to the caller too
+    if (!user?.sub || body.to === id) return reply.code(400).send({ error: "INVALID_TARGET" });
+    try {
+      await authorizationService.assertDeviceAccess(user.sub, body.to);
+    } catch (e) {
+      return reply.code(403).send({ error: (e as Error).message });
+    }
     try {
       await playbackService.transfer(id, body.to);
       return { ok: true };

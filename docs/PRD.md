@@ -16,7 +16,7 @@ The core concept is to separate:
 1. **Controller devices** — phones, tablets, desktops, or browsers used to control playback.
 2. **Player devices** — PCs, Android devices, TVs, or other devices physically connected to speakers/headphones.
 3. **Control Server** — central Node.js service responsible for authentication, device management, queue management, playback state, and realtime communication.
-4. **Redis** — realtime state, device presence, queues, and pub/sub.
+4. **Redis** — ephemeral realtime state, device presence, queues, distributed locks, and caches. Realtime delivery to controllers/players uses **WebSocket** (see §38), not Redis pub/sub.
 5. **Music Providers** — adapters such as YouTube Music.
 6. **Playback Engines** — adapters such as mpv.
 
@@ -31,7 +31,7 @@ Controller
    ▼
 Music Server
    │
-   │ Redis Pub/Sub
+   │ WebSocket (state/commands)
    ▼
 Player Agent
    │
@@ -58,7 +58,7 @@ Speaker / Headphones
 - Allow device handoff without restarting playback from the beginning.
 - Keep audio traffic out of the central server whenever possible.
 - Provide a clean Web UI suitable for mobile and desktop.
-- Use Redis for realtime state and pub/sub.
+- Use Redis for realtime state, locks and caches; deliver realtime events over WebSocket.
 - Make the architecture provider- and playback-engine agnostic.
 
 ## Secondary Goals

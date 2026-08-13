@@ -18,9 +18,22 @@ const AUTO_QUEUE_BATCH = Number(process.env.AUTO_QUEUE_BATCH ?? 10);
 const UP_NEXT_CACHE_TTL_SECONDS = 600; // D-09: cache recommendations 10 min
 
 export class AutoQueueService {
+  /** Single-flight (4.3): only one ensure() runs per device at a time. */
+  private readonly inflight = new Map<string, Promise<number>>();
+
   /** Refill the queue if it's running low. Returns how many tracks were added. */
-  async ensure(deviceId: string, seedTrackId: string | null): Promise<number> {
-    if (!seedTrackId) return 0;
+  ensure(deviceId: string, seedTrackId: string | null): Promise<number> {
+    if (!seedTrackId) return Promise.resolve(0);
+    const existing = this.inflight.get(deviceId);
+    if (existing) return existing; // concurrent ensure() reuses the in-flight one
+    const p = this.doEnsure(deviceId, seedTrackId).finally(() => {
+      this.inflight.delete(deviceId);
+    });
+    this.inflight.set(deviceId, p);
+    return p;
+  }
+
+  private async doEnsure(deviceId: string, seedTrackId: string): Promise<number> {
     const queue = await queueService.get(deviceId);
     const index = await queueService.getIndex(deviceId);
     if (queue.length - index - 1 >= AUTO_QUEUE_THRESHOLD) return 0;

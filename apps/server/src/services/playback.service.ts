@@ -31,6 +31,8 @@ const EMPTY_STATE = (deviceId: string): PlaybackState => ({
 export class PlaybackService {
   /** When each device last received a track load (anti auto-next loop). */
   private lastLoadAt = new Map<string, number>();
+  /** Per-device in-process mutex for state mutations (4.2). */
+  private readonly stateChains = new Map<string, Promise<void>>();
 
   async play(deviceId: string, trackId?: string, track?: Track): Promise<void> {
     incCounter("music_playback_commands_total");
@@ -324,12 +326,20 @@ export class PlaybackService {
   }
 
   private async patchState(deviceId: string, patch: Partial<PlaybackState>): Promise<void> {
-    const cur = (await this.getState(deviceId)) ?? EMPTY_STATE(deviceId);
-    const next: PlaybackState = { ...cur, ...patch, updatedAt: Date.now() };
-    await redis.set(RedisKeys.deviceState(deviceId), JSON.stringify(next));
-    // hybrid realtime: push state to every controller; REST stays for commands.
-    // Player reports arrive ~1/s so this is naturally throttled.
-    broadcastToControllers({ type: "player.state", deviceId, state: next });
+    // 4.2: serialize mutations per device (in-process mutex). GET→merge→SET
+    // races (position report vs pause vs volume) would otherwise lose fields.
+    const prev = this.stateChains.get(deviceId) ?? Promise.resolve();
+    const run = async (): Promise<void> => {
+      const cur = (await this.getState(deviceId)) ?? EMPTY_STATE(deviceId);
+      const next: PlaybackState = { ...cur, ...patch, updatedAt: Date.now() };
+      await redis.set(RedisKeys.deviceState(deviceId), JSON.stringify(next));
+      // hybrid realtime: push state to every controller; REST stays for commands.
+      // Player reports arrive ~1/s so this is naturally throttled.
+      broadcastToControllers({ type: "player.state", deviceId, state: next });
+    };
+    const chained = prev.then(run, run);
+    this.stateChains.set(deviceId, chained.catch(() => undefined));
+    await chained;
   }
 
   private requireOnline(sent: boolean): void {

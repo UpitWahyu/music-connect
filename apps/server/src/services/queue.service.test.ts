@@ -146,6 +146,15 @@ describe("queue cursor", () => {
     expect(await queueService.getIndex(DEVICE)).toBe(1);
   });
 
+  it("100 concurrent advance() calls never lose increments (4.1)", async () => {
+    await queueService.set(DEVICE, []);
+    for (let i = 0; i < 120; i++) await queueService.add(DEVICE, track(`C${i}`));
+    await queueService.setIndex(DEVICE, 0);
+    const results = await Promise.all(Array.from({ length: 100 }, () => queueService.advance(DEVICE)));
+    expect(results.filter(Boolean)).toHaveLength(100); // all succeeded, none skipped
+    expect(await queueService.getIndex(DEVICE)).toBe(100); // cursor advanced exactly 100
+  });
+
   it("placeCurrent returns null for a missing track", async () => {
     expect(await queueService.placeCurrent(DEVICE, "T-MISSING")).toBeNull();
   });

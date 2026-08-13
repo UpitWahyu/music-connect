@@ -169,13 +169,34 @@ export class QueueService {
     return queue[(await this.getIndex(deviceId))] ?? null;
   }
 
-  /** Advance to the next item. Returns null when the queue is exhausted. */
+  /** Advance to the next item. Returns null when the queue is exhausted.
+   * Atomic (4.1): queue + cursor are read and written under the same
+   * distributed lock, so concurrent next() calls can never lose an increment. */
   async advance(deviceId: string): Promise<QueueItem | null> {
-    const queue = await this.get(deviceId);
-    const next = (await this.getIndex(deviceId)) + 1;
-    if (next >= queue.length) return null;
-    await this.setIndex(deviceId, next);
-    return queue[next] ?? null;
+    const owner = await this.ownerOf(deviceId);
+    const key = this.keyOf(owner);
+    const indexKey = this.keyOf(owner, true);
+    const lockKey = `${key}:lock`;
+    const token = randomUUID();
+    for (let attempt = 0; attempt < 500; attempt++) {
+      const acquired = await redis.set(lockKey, token, "EX", 5, "NX");
+      if (acquired) {
+        try {
+          const queue = await this.get(deviceId);
+          const idx = Number((await redis.get(indexKey)) ?? "0");
+          const next = idx + 1;
+          if (next >= queue.length) return null;
+          await redis.set(indexKey, String(next));
+          incCounter("music_queue_mutations_total");
+          return queue[next] ?? null;
+        } finally {
+          await redis.eval(QueueService.RELEASE_LUA, 1, lockKey, token).catch(() => null);
+        }
+      }
+      // short fixed backoff — with many contenders the last one wins in ~N×6ms
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    throw new Error("QUEUE_LOCK_TIMEOUT");
   }
 
   /** Move the cursor to an existing track, or null if it's not in the queue. */

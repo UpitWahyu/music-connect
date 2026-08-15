@@ -353,6 +353,34 @@ describe("player registry / reconnect", () => {
   });
 });
 
+describe("player disconnect grace (UX)", () => {
+  it("parks a playing track as paused when the player stays offline past the grace window", async () => {
+    process.env.PLAYER_DC_GRACE_MS = "300";
+    try {
+      const p = new FakePlayer(url());
+      await p.opened;
+      await p.auth(DEVICE, DEV_TOKEN);
+      await p.next("player.ready");
+      await p.next("player.setVolume");
+
+      await api("POST", `/api/devices/${DEVICE}/play`, { trackId: "G1", track: track("G1") });
+      await p.next("player.load");
+      p.report({ trackId: "G1", status: "playing", position: 20, queueIndex: 0 });
+      await new Promise((r) => setTimeout(r, 300));
+      expect((await playbackService.getState(DEVICE))?.state).toBe("playing");
+
+      p.close(); // disconnect mid-track
+      await new Promise((r) => setTimeout(r, 900)); // grace (300ms) elapsed
+
+      const st = await playbackService.getState(DEVICE);
+      expect(st?.state).toBe("paused");
+      expect(st?.position).toBe(20); // last position kept for resume
+    } finally {
+      delete process.env.PLAYER_DC_GRACE_MS;
+    }
+  });
+});
+
 describe("handoff (device transfer)", () => {
   it("transfers the current track + position to an online device", async () => {
     const a = new FakePlayer(url());

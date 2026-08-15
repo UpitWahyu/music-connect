@@ -46,7 +46,10 @@ const localPosAt = ref(Date.now()); // when the anchor was received
 const posNow = ref(Date.now()); // reactive clock — ticks once per second
 const smoothPos = computed(() => {
   if (!pb.value) return 0;
-  if (pb.value.state !== "playing") return pb.value.position ?? 0; // static when paused/stopped
+  // UX: never advance the clock until the track is *actually* playing —
+  // the server marks state=playing as soon as the load is sent, so position
+  // 0 with no real playback yet would roll the bar back to 0 repeatedly.
+  if (pb.value.state !== "playing" || localPos.value <= 0) return pb.value.position ?? 0;
   return localPos.value + (posNow.value - localPosAt.value) / 1000;
 });
 
@@ -56,8 +59,12 @@ watch(
   (v) => {
     if (v === undefined) return;
     if (pb.value?.state === "playing") {
-      const smooth = smoothPos.value;
-      localPos.value = Math.abs(smooth - v) > 4 ? v : smooth;
+      if (v > 0) {
+        const smooth = smoothPos.value;
+        localPos.value = Math.abs(smooth - v) > 4 ? v : smooth;
+      } else {
+        localPos.value = 0; // loaded but not started yet — hold at 0
+      }
     } else {
       localPos.value = v;
     }
@@ -68,7 +75,7 @@ watch(
 // 1s tick: advance the clock (smooth per-second motion) + drift check
 const posTimer = setInterval(() => {
   posNow.value = Date.now();
-  if (pb.value?.state === "playing") {
+  if (pb.value?.state === "playing" && localPos.value > 0) {
     const smooth = smoothPos.value;
     const server = pb.value.position ?? 0;
     // desynced (seek/transfer elsewhere, pause race) — snap back to server

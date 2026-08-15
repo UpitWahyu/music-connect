@@ -315,6 +315,17 @@ export class PlaybackService {
     }
   }
 
+  /**
+   * Player disconnected and stayed offline past the grace window: park the
+   * playback state as paused (no player command — it's offline), keeping the
+   * last track + position so a resume / reconnect restores it.
+   */
+  async pauseOnDisconnect(deviceId: string): Promise<void> {
+    const st = await this.getState(deviceId);
+    if (!st || st.state !== "playing") return;
+    await this.patchState(deviceId, { state: "paused", position: st.position, updatedAt: Date.now() });
+  }
+
   async getState(deviceId: string): Promise<PlaybackState | null> {
     const raw = await redis.get(RedisKeys.deviceState(deviceId));
     return raw ? (JSON.parse(raw) as PlaybackState) : null;

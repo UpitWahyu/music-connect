@@ -13,6 +13,7 @@ import { authorizationService } from "../services/authorization.service.js";
 import {
   addController,
   broadcastToControllers,
+  isPlayerRegistered,
   registerPlayer,
   removeController,
   unregisterPlayer,
@@ -188,10 +189,25 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
 
     s.on("close", () => {
       if (deviceId) {
-        unregisterPlayer(deviceId, s);
-        void deviceService.markOffline(deviceId);
+        const id = deviceId;
+        unregisterPlayer(id, s);
+        void deviceService.markOffline(id);
         // hybrid realtime: controllers learn about the device going offline
-        broadcastToControllers({ type: "device.updated", deviceId, device: { id: deviceId, online: false } });
+        broadcastToControllers({ type: "device.updated", deviceId: id, device: { id, online: false } });
+        // UX: if the player stays offline past the grace window (default 10s),
+        // park playback as paused and keep the last position — the web
+        // seekbar must stop advancing instead of running against a dead
+        // player. A quick reconnect (network blip) within the window is
+        // untouched. PLAYER_DC_GRACE_MS is read per-call (tests override it).
+        const graceMs = Number(process.env.PLAYER_DC_GRACE_MS ?? 10000);
+        const timer = setTimeout(() => {
+          void (async () => {
+            if (!isPlayerRegistered(id)) {
+              await playbackService.pauseOnDisconnect(id);
+            }
+          })();
+        }, graceMs);
+        timer.unref?.();
       }
     });
   });

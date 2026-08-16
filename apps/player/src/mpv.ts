@@ -36,6 +36,9 @@ export class Mpv extends EventEmitter {
   private started = false;
   private stopping = false;
   private restartTimer: NodeJS.Timeout | null = null;
+  // 15: one active IPC connection attempt + one reconnect timer max
+  private ipcConnecting = false;
+  private ipcRetryTimer: NodeJS.Timeout | null = null;
 
   state: MpvState = { paused: false, position: 0, duration: 0, volume: 70, idle: true };
 
@@ -115,6 +118,10 @@ export class Mpv extends EventEmitter {
     if (this.stopping) return;
     this.stopping = true;
     if (this.restartTimer) clearTimeout(this.restartTimer);
+    if (this.ipcRetryTimer) {
+      clearTimeout(this.ipcRetryTimer);
+      this.ipcRetryTimer = null;
+    }
     if (this.sock) {
       this.sock.destroy();
       this.sock = null;
@@ -129,12 +136,14 @@ export class Mpv extends EventEmitter {
     return this.stopping;
   }
 
-  private connectWithRetry(attempt = 0): void {
-    if (this.stopping) return; // no reconnect after shutdown
+  private connectWithRetry(): void {
+    if (this.stopping || this.ipcConnecting) return; // one attempt at a time
+    this.ipcConnecting = true;
     const sock = this.isTcp
       ? createConnection({ host: this.host, port: this.port })
       : createConnection(this.host);
     sock.on("connect", () => {
+      this.ipcConnecting = false;
       this.sock = sock;
       this.buf = "";
       this.attach(sock);
@@ -147,8 +156,20 @@ export class Mpv extends EventEmitter {
     sock.on("error", () => {
       // mpv may take a while to create the IPC socket (slow devices like
       // Termux) — keep retrying forever; the socket can appear any time
-      setTimeout(() => this.connectWithRetry(attempt + 1), 1000);
+      this.ipcConnecting = false;
+      this.scheduleIpcReconnect();
     });
+  }
+
+  /** 15: exactly ONE reconnect timer and ONE connection attempt — error and
+   *  close both fire on a dead socket and must not double-schedule. */
+  private scheduleIpcReconnect(): void {
+    if (this.stopping || this.ipcRetryTimer) return;
+    this.ipcRetryTimer = setTimeout(() => {
+      this.ipcRetryTimer = null;
+      this.connectWithRetry();
+    }, 1000);
+    this.ipcRetryTimer.unref?.();
   }
 
   private attach(sock: Socket): void {
@@ -170,12 +191,13 @@ export class Mpv extends EventEmitter {
     });
     sock.on("close", () => {
       this.sock = null;
+      this.ipcConnecting = false;
       for (const p of this.pending.values()) {
         clearTimeout(p.timer);
         p.reject(new Error("mpv disconnected"));
       }
       this.pending.clear();
-      this.connectWithRetry();
+      this.scheduleIpcReconnect();
     });
   }
 

@@ -5,6 +5,7 @@ import { playlistService } from "../services/playlist.service.js";
 import { favoriteService } from "../services/favorite.service.js";
 import { historyService } from "../services/history.service.js";
 import { playbackService } from "../services/playback.service.js";
+import { authorizationService } from "../services/authorization.service.js";
 import { redis } from "../redis/client.js";
 import { broadcastToControllers } from "../ws/registry.js";
 
@@ -76,10 +77,13 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
     if (!body.deviceId) return reply.code(400).send({ error: "MISSING_DEVICE_ID" });
     const playlist = await playlistService.get(userIdOf(req), id);
     if (!playlist || playlist.tracks.length === 0) return reply.code(404).send({ error: "PLAYLIST_EMPTY" });
+    // P0: playlist ownership is NOT enough — the target device must belong to
+    // the same user too (playlist of A → device of B must be rejected)
     try {
+      await authorizationService.assertDeviceAccess(userIdOf(req), body.deviceId);
       return await playbackService.playTracks(body.deviceId, playlistService.toTracks(playlist));
     } catch (e) {
-      return reply.code(400).send({ error: (e as Error).message });
+      return reply.code(403).send({ error: (e as Error).message });
     }
   });
 

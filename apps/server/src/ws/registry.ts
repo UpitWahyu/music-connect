@@ -66,6 +66,27 @@ export function activePlayerCount(): number {
 }
 
 /**
+ * P0 (device.selected): deliver an event ONLY to the controllers of one user
+ * — never broadcast user-scoped selections/events to other accounts.
+ */
+export function sendToUser(userId: string, event: ServerEvent): void {
+  const data = JSON.stringify(event);
+  for (const [c, u] of controllers) {
+    if (c.readyState !== 1) continue;
+    if (u === userId) c.send(data);
+  }
+}
+
+/** Devices the user is allowed to see (their own + unbound legacy ones). */
+export function deviceIdsForUser(userId: string): string[] {
+  const ids: string[] = [];
+  for (const [id, owner] of deviceOwner) {
+    if (owner === null || owner === undefined || owner === userId) ids.push(id);
+  }
+  return ids;
+}
+
+/**
  * Multi-user: deliver an event ONLY to controllers who own the device it
  * refers to. Legacy devices without an owner broadcast to everyone (the
  * pre-multi-user behaviour), keeping single-user setups unchanged.

@@ -195,6 +195,11 @@ class FakeController {
     this.send({ type: "auth", token });
   }
 
+  /** Register a one-shot close listener (returns the close code). */
+  wsOnceClose(fn: (code: number) => void): void {
+    this.ws.once("close", (code: number) => fn(code));
+  }
+
   async next(type: string, timeout = 5000): Promise<Record<string, unknown>> {
     const qi = this.queue.findIndex((m) => m.type === type);
     if (qi >= 0) return this.queue.splice(qi, 1)[0]!;
@@ -703,6 +708,86 @@ describe("multi-user scoping", () => {
     await expect(c2.next("player.state", 1500)).rejects.toThrow("timeout"); // other user: silence
     c1.close();
     c2.close();
+    p.close();
+  });
+
+  it("user2 cannot read user1's playback state", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/devices/${DEVICE}/state`,
+      headers: { authorization: `Bearer ${token2}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("user2 cannot play a user1 playlist on a user1 device (device + playlist auth)", async () => {
+    const pl = await app.inject({
+      method: "POST",
+      url: "/api/playlists",
+      payload: { name: "user1-only" },
+      headers: { authorization: `Bearer ${controllerToken}` },
+    });
+    const playlistId = (JSON.parse(pl.body) as { playlist?: { id: string } }).playlist?.id;
+    expect(playlistId).toBeTruthy();
+    // a non-empty playlist, otherwise the route 404s before the device check
+    await app.inject({
+      method: "POST",
+      url: `/api/playlists/${playlistId}/tracks`,
+      payload: { track: track("PL1") },
+      headers: { authorization: `Bearer ${controllerToken}` },
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/playlists/${playlistId}/play`,
+      payload: { deviceId: DEVICE },
+      headers: { authorization: `Bearer ${token2}` },
+    });
+    // 404 = playlist not visible to user2 (no existence leak); 403 = device
+    // check fired — either way the cross-user play is rejected
+    expect([403, 404]).toContain(res.statusCode);
+  });
+
+  it("controller with an invalid JWT is rejected (closed)", async () => {
+    const c = new FakeController();
+    await c.opened;
+    const closed = new Promise<number>((resolve) => c.wsOnceClose(resolve));
+    c.auth("definitely.not.a.jwt");
+    const code = await closed;
+    expect(code).toBe(4401);
+  });
+
+  it("50 concurrent state reports never corrupt the playback state", async () => {
+    const p = new FakePlayer(url());
+    await p.opened;
+    await p.auth(DEVICE, DEV_TOKEN);
+    await p.next("player.ready");
+    await p.next("player.setVolume");
+
+    await api("POST", `/api/devices/${DEVICE}/play`, { trackId: "S1", track: track("S1") });
+    await p.next("player.load");
+    // 50 position reports racing through applyPlayerReport (P1 §8 stress)
+    await Promise.all(
+      Array.from({ length: 50 }, (_, i) =>
+        p.send({
+          type: "player.state",
+          report: {
+            deviceId: DEVICE,
+            status: "playing",
+            trackId: "S1",
+            position: i,
+            volume: 40 + (i % 20),
+            queueIndex: 0,
+            updatedAt: Date.now() + i,
+          },
+        }),
+      ),
+    );
+    await new Promise((r) => setTimeout(r, 600));
+    const st = await playbackService.getState(DEVICE);
+    expect(st?.state).toBe("playing");
+    expect(st?.track?.id).toBe("S1"); // track field never lost
+    expect(typeof st?.volume).toBe("number");
+    expect(typeof st?.position).toBe("number");
     p.close();
   });
 

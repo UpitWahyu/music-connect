@@ -34,6 +34,11 @@ export class AuthorizationService {
       return false;
     }
   }
+
+  /** Queue mutations are device control — same boundary. */
+  async canModifyQueue(userId: string, deviceId: string): Promise<boolean> {
+    return this.canControlDevice(userId, deviceId);
+  }
 }
 
 export const authorizationService = new AuthorizationService();

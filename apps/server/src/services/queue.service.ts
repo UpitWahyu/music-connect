@@ -52,8 +52,21 @@ export class QueueService {
   `;
 
   private async mutate(deviceId: string, fn: (q: QueueItem[]) => QueueItem[]): Promise<QueueItem[]> {
+    return this.mutateWithCursor(deviceId, (queue, _index) => ({ queue: fn(queue), index: _index })).then((r) => r.queue);
+  }
+
+  /**
+   * Read-modify-write of queue AND cursor under ONE distributed lock (P1):
+   * cursor-dependent operations (play-next, insert-at-current, clear,
+   * replace) can never observe a cursor that another mutation is changing.
+   */
+  private async mutateWithCursor(
+    deviceId: string,
+    fn: (q: QueueItem[], index: number) => { queue: QueueItem[]; index: number },
+  ): Promise<{ queue: QueueItem[]; index: number }> {
     const owner = await this.ownerOf(deviceId);
     const key = this.keyOf(owner);
+    const indexKey = this.keyOf(owner, true);
     const lockKey = `${key}:lock`;
     const token = randomUUID();
     for (let attempt = 0; attempt < 50; attempt++) {
@@ -61,10 +74,12 @@ export class QueueService {
       if (acquired) {
         try {
           const queue = await this.get(deviceId);
-          const next = fn(queue);
-          await redis.set(key, JSON.stringify(next));
+          const index = Number((await redis.get(indexKey)) ?? "0");
+          const result = fn(queue, index);
+          await redis.set(key, JSON.stringify(result.queue));
+          await redis.set(indexKey, String(result.index));
           incCounter("music_queue_mutations_total");
-          return next;
+          return result;
         } finally {
           await redis
             .eval(QueueService.RELEASE_LUA, 1, lockKey, token)
@@ -90,13 +105,14 @@ export class QueueService {
   async add(deviceId: string, track: Track, position?: "next"): Promise<QueueItem[]> {
     const item: QueueItem = { id: randomUUID(), track, addedBy: "user" };
     if (position === "next") {
-      // "Play next": insert right after the current track (cursor-aware),
-      // not hardcoded at index 1
-      const current = await this.getIndex(deviceId);
-      return this.mutate(deviceId, (queue) => {
-        queue.splice(Math.min(current + 1, queue.length), 0, item);
-        return queue;
-      });
+      // "Play next": insert right after the current track. Cursor-aware AND
+      // atomic — cursor + queue are read/written under the same lock, so a
+      // concurrent advance() can never shift the insert position (P1).
+      return this.mutateWithCursor(deviceId, (queue, index) => {
+        const next = [...queue];
+        next.splice(Math.min(index + 1, next.length), 0, item);
+        return { queue: next, index };
+      }).then((r) => r.queue);
     }
     return this.mutate(deviceId, (queue) => {
       queue.push(item);
@@ -117,9 +133,21 @@ export class QueueService {
     return this.mutate(deviceId, (queue) => queue.filter((i) => i.id !== itemId));
   }
 
+  /** Atomic clear: queue = [] AND cursor = 0 in one critical section (P1). */
   async clear(deviceId: string): Promise<QueueItem[]> {
-    await this.setIndex(deviceId, 0);
-    return this.mutate(deviceId, () => []);
+    const { queue } = await this.mutateWithCursor(deviceId, () => ({ queue: [], index: 0 }));
+    return queue;
+  }
+
+  /** Atomic replace (P1): swap the whole queue and reset the cursor in ONE
+   *  lock — used by playTracks so playlist playback cannot interleave with
+   *  other mutations. */
+  async replace(deviceId: string, tracks: Track[], index = 0): Promise<QueueItem[]> {
+    const { queue } = await this.mutateWithCursor(deviceId, (current) => ({
+      queue: tracks.map((track) => ({ id: randomUUID(), track, addedBy: "user" as const })),
+      index: Math.min(index, Math.max(0, tracks.length - 1)),
+    }));
+    return queue;
   }
 
   /** Player-reported authoritative duration (D-08) — fixes 0:00 tracks. */
@@ -199,22 +227,25 @@ export class QueueService {
     throw new Error("QUEUE_LOCK_TIMEOUT");
   }
 
-  /** Move the cursor to an existing track, or null if it's not in the queue. */
+  /** Move the cursor to an existing track, or null if it's not in the queue.
+   *  Atomic: cursor + queue under one lock — never points at a stale index. */
   async placeCurrent(deviceId: string, trackId: string): Promise<QueueItem | null> {
-    const queue = await this.get(deviceId);
-    const idx = queue.findIndex((i) => i.track.id === trackId);
-    if (idx < 0) return null;
-    await this.setIndex(deviceId, idx);
-    return queue[idx] ?? null;
+    const { queue, index } = await this.mutateWithCursor(deviceId, (q, i) => {
+      const idx = q.findIndex((item) => item.track.id === trackId);
+      return { queue: q, index: idx >= 0 ? idx : i };
+    });
+    // track not found → null (never fall back to whatever sits at the cursor)
+    return queue[index] && queue[index]!.track.id === trackId ? queue[index]! : null;
   }
 
-  /** Insert at the current position (Spotify "play now" semantics). */
+  /** Insert at the current position (Spotify "play now" semantics) — atomic
+   *  with the cursor so a concurrent advance cannot reorder the insert. */
   async insertAtCurrent(deviceId: string, track: Track, addedBy: string = "user"): Promise<QueueItem> {
     const item: QueueItem = { id: randomUUID(), track, addedBy };
-    const index = await this.getIndex(deviceId);
-    await this.mutate(deviceId, (queue) => {
-      queue.splice(Math.min(index, queue.length), 0, item);
-      return queue;
+    await this.mutateWithCursor(deviceId, (queue, index) => {
+      const next = [...queue];
+      next.splice(Math.min(index, next.length), 0, item);
+      return { queue: next, index };
     });
     return item;
   }

@@ -1,6 +1,6 @@
 import type { Track, Album, Artist, Playlist } from "@music-connect/types";
 import type { MusicProvider } from "./music-provider.js";
-import { incCounter } from "../metrics.js";
+import { incCounter, setGauge } from "../metrics.js";
 
 /**
  * Provider resilience wrapper (10.1, 10.2, 10.3):
@@ -45,6 +45,7 @@ export class ResilientProvider implements MusicProvider {
       incCounter("music_provider_errors_total");
       return Promise.reject(new Error("PROVIDER_UNAVAILABLE"));
     }
+    const started = Date.now();
     return this.withTimeout(fn)
       .then((result) => {
         this.failures = 0; // success closes the circuit
@@ -57,6 +58,12 @@ export class ResilientProvider implements MusicProvider {
         if (e.message === "PROVIDER_TIMEOUT") incCounter("music_provider_timeouts_total");
         if (this.failures >= BREAK_THRESHOLD) this.openUntil = Date.now() + BREAK_MS;
         throw e;
+      })
+      .finally(() => {
+        // latency observability (22): last-call gauge + cumulative seconds
+        const elapsed = Date.now() - started;
+        setGauge("music_provider_latency_seconds_last", elapsed / 1000);
+        incCounter("music_provider_latency_seconds_total", Math.round(elapsed / 1000));
       });
   }
 

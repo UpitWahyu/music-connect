@@ -97,6 +97,8 @@ model PlaybackHistory {
   title    String
   artist   String
   playedAt DateTime @default(now())
+  playedSeconds Int? // how much actually played before completion (P2)
+  completionReason String? // COMPLETED | SKIPPED | STOPPED (null = still playing)
 
   @@index([userId, playedAt]) // history tab: per-user, newest first
 }
@@ -116,8 +118,12 @@ model ProviderAccount {
 
 model UserSetting {
   id     String @id @default(cuid())
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id])
+  userId String
   key    String
   value  String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([userId])
 }

@@ -119,6 +119,7 @@ export class PlaybackService {
     incCounter("music_playback_commands_total");
     this.clearPrefetchTimer(deviceId);
     this.pendingNext.delete(deviceId);
+    void this.finishHistory(deviceId, "STOPPED");
     this.requireOnline(sendToPlayer(deviceId, { type: "player.stop" }));
     await this.patchState(deviceId, { state: "stopped", position: 0 });
   }
@@ -219,6 +220,8 @@ export class PlaybackService {
     // stale end-file from the previous track must not skip the new one)
     const last = this.lastLoadAt.get(deviceId) ?? 0;
     if (Date.now() - last < 3000) return;
+    // P2: a natural end closes the history entry as COMPLETED
+    if (reason === "eof") void this.finishHistory(deviceId, "COMPLETED");
     // stream failure (Termux / weak WiFi / YouTube throttle): retry the SAME
     // track a few times before giving up and advancing — the user asked for
     // this song, a transient network blip must not skip it
@@ -267,9 +270,9 @@ export class PlaybackService {
     incCounter("music_playback_commands_total");
     if (tracks.length === 0) throw new Error("PLAYLIST_NOT_FOUND");
 
-    await queueService.clear(deviceId);
-    for (const track of tracks) await queueService.add(deviceId, track);
-    await queueService.setIndex(deviceId, 0);
+    // P1: one atomic queue mutation (replace + cursor=0) — no interleaving
+    // with other controllers' adds/reorders mid-replacement
+    await queueService.replace(deviceId, tracks, 0);
 
     const first = await queueService.getCurrent(deviceId);
     if (first) {
@@ -362,6 +365,7 @@ export class PlaybackService {
                 provider: "youtube-music",
                 title: track?.title ?? "",
                 artist: track?.artist ?? "",
+                playedSeconds: Math.round(report.position ?? 0),
               },
             })
             .catch(() => null);
@@ -458,6 +462,29 @@ export class PlaybackService {
     if (st.state === "playing" && st.track) this.schedulePrefetch(deviceId, st.track);
   }
 
+  /**
+   * P2: close the device's most recent open history entry (the one currently
+   * playing) with a completion reason + how much of it actually played.
+   * Entries already closed (COMPLETED/SKIPPED/STOPPED) are never touched.
+   */
+  private async finishHistory(deviceId: string, reason: "COMPLETED" | "SKIPPED" | "STOPPED"): Promise<void> {
+    try {
+      const last = await prisma.playbackHistory.findFirst({
+        where: { deviceId, completionReason: null },
+        orderBy: { playedAt: "desc" },
+        select: { id: true },
+      });
+      if (!last) return;
+      const st = (await this.getState(deviceId)) ?? EMPTY_STATE(deviceId);
+      await prisma.playbackHistory.update({
+        where: { id: last.id },
+        data: { completionReason: reason, playedSeconds: Math.round(st.position ?? 0) },
+      });
+    } catch {
+      // history is best-effort — never fail playback for it
+    }
+  }
+
   async getState(deviceId: string): Promise<PlaybackState | null> {
     const raw = await redis.get(RedisKeys.deviceState(deviceId));
     return raw ? (JSON.parse(raw) as PlaybackState) : null;
@@ -467,6 +494,10 @@ export class PlaybackService {
     // any new load that is NOT a stream-error retry resets the per-track
     // retry budget (play/next/previous/transfer all start a fresh attempt)
     if (!fromRetry) this.trackRetries.delete(deviceId);
+    // P2: the previous track's history entry is closed when playback moves on
+    // (a completed entry is already COMPLETED and is left untouched)
+    const prev = await this.getState(deviceId);
+    if (!fromRetry && prev?.track) void this.finishHistory(deviceId, "SKIPPED");
     const media: MediaRef = { mode: "id", youtubeId: item.track.id };
     const volume = await deviceService.getVolume(deviceId);
     this.requireOnline(sendToPlayer(deviceId, { type: "player.load", trackId: item.track.id, media, volume }));

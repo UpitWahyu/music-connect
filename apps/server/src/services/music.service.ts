@@ -1,6 +1,7 @@
 import type { Track, Album, Artist, Playlist } from "@music-connect/types";
 import { RedisKeys } from "@music-connect/shared";
 import { redis } from "../redis/client.js";
+import { incCounter } from "../metrics.js";
 import type { MusicProvider } from "../providers/music-provider.js";
 import { YoutubeMusicProvider } from "../providers/youtube-music.js";
 import { ResilientProvider } from "../providers/resilient-provider.js";
@@ -33,7 +34,11 @@ export class MusicService {
   async search(query: string): Promise<Track[]> {
     const cacheKey = RedisKeys.cacheSearch(query);
     const cached = await redis.get(cacheKey);
-    if (cached) return JSON.parse(cached) as Track[];
+    if (cached) {
+      incCounter("music_provider_cache_hits_total");
+      return JSON.parse(cached) as Track[];
+    }
+    incCounter("music_provider_cache_misses_total");
     // cache miss + many controllers typing the same query → one YouTube call
     return this.withSingleFlight(`search:${query}`, async () => {
       const results = (await this.provider("youtube-music")?.search(query)) ?? [];
@@ -45,7 +50,11 @@ export class MusicService {
   async getTrack(id: string): Promise<Track | null> {
     const cacheKey = RedisKeys.cacheMetadata("youtube-music", id);
     const cached = await redis.get(cacheKey);
-    if (cached) return JSON.parse(cached) as Track;
+    if (cached) {
+      incCounter("music_provider_cache_hits_total");
+      return JSON.parse(cached) as Track;
+    }
+    incCounter("music_provider_cache_misses_total");
     return this.withSingleFlight(`track:${id}`, async () => {
       const track = (await this.provider("youtube-music")?.getTrack(id)) ?? null;
       if (track) await redis.set(cacheKey, JSON.stringify(track), "EX", METADATA_TTL_SECONDS);

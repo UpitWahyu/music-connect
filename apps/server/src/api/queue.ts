@@ -17,6 +17,7 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
     const body = (req.body ?? {}) as { track?: Track; playNext?: boolean };
     if (!body.track) return reply.code(400).send({ error: "MISSING_TRACK" });
     const queue = await queueService.add(id, body.track, body.playNext ? "next" : undefined);
+    void playbackService.invalidatePrefetch(id); // queue order changed — re-pick next
     return { queue };
   });
 
@@ -24,6 +25,7 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
     const { id } = req.params as { id: string };
     const queue = await queueService.clear(id);
     broadcastToControllers({ type: "queue.updated", deviceId: id, queue }); // sync all browsers
+    void playbackService.invalidatePrefetch(id); // nothing left to prefetch
     return { queue };
   });
 
@@ -32,6 +34,7 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
     const { id, itemId } = req.params as { id: string; itemId: string };
     const queue = await queueService.remove(id, itemId);
     broadcastToControllers({ type: "queue.updated", deviceId: id, queue }); // sync all browsers
+    void playbackService.invalidatePrefetch(id); // pending item may be gone
     return { queue };
   });
 
@@ -45,6 +48,7 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
     try {
       const queue = await queueService.reorder(id, body.order);
       broadcastToControllers({ type: "queue.updated", deviceId: id, queue }); // sync all browsers
+      void playbackService.invalidatePrefetch(id); // order changed — pending may be wrong
       return { queue };
     } catch (e) {
       return reply.code(400).send({ error: (e as Error).message });

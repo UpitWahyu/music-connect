@@ -33,7 +33,12 @@ export type PlayerCommand =
   | { type: "player.resume" }
   | { type: "player.seek"; position: number }
   | { type: "player.setVolume"; volume: number }
-  | { type: "player.stop" };
+  | { type: "player.stop" }
+  // Gapless prefetch: append the next track to mpv's playlist so it buffers
+  // before the current one ends (player.prefetchClear cancels it — queue
+  // changed, user skipped, etc).
+  | { type: "player.prefetch"; trackId: string; media: MediaRef }
+  | { type: "player.prefetchClear" };
 
 /** Player → Server events. */
 export type PlayerEvent =

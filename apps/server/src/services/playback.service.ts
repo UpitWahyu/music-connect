@@ -14,6 +14,8 @@ import { autoQueueService } from "./auto-queue.service.js";
 const HANDOFF_TIMEOUT_MS = Number(process.env.HANDOFF_TIMEOUT_MS ?? 5000);
 /** 9: seconds a track must actually play before it counts as history. */
 const HISTORY_MIN_SECONDS = Number(process.env.HISTORY_RECORD_SECONDS ?? 10);
+/** How many seconds before a track ends the next track is prefetched. */
+const PREFETCH_LEAD_MS = Number(process.env.PREFETCH_LEAD_MS ?? 20000);
 
 const EMPTY_STATE = (deviceId: string): PlaybackState => ({
   deviceId,
@@ -40,6 +42,10 @@ export class PlaybackService {
   private readonly stateChains = new Map<string, Promise<void>>();
   /** deviceId → trackId already recorded in history (9: threshold-once). */
   private readonly historyRecorded = new Map<string, string>();
+  /** deviceId → prefetch timer for the upcoming track (gapless). */
+  private readonly prefetchTimers = new Map<string, NodeJS.Timeout>();
+  /** deviceId → the exact next track the player is already buffering. */
+  private readonly pendingNext = new Map<string, { trackId: string; track: Track }>();
 
   async play(deviceId: string, trackId?: string, track?: Track): Promise<void> {
     incCounter("music_playback_commands_total");
@@ -109,6 +115,8 @@ export class PlaybackService {
 
   async stop(deviceId: string): Promise<void> {
     incCounter("music_playback_commands_total");
+    this.clearPrefetchTimer(deviceId);
+    this.pendingNext.delete(deviceId);
     this.requireOnline(sendToPlayer(deviceId, { type: "player.stop" }));
     await this.patchState(deviceId, { state: "stopped", position: 0 });
   }
@@ -132,6 +140,22 @@ export class PlaybackService {
         await autoQueueService.ensure(deviceId, item.track.id);
         return;
       }
+    }
+
+    // gapless: reuse the decision the player is already prefetching — the
+    // exact track it has buffered must be the one we load next (never re-pick).
+    const pending = this.pendingNext.get(deviceId);
+    if (pending) {
+      this.pendingNext.delete(deviceId);
+      this.clearPrefetchTimer(deviceId);
+      const pi = queue.findIndex((x) => x.track.id === pending.trackId);
+      if (pi >= 0) {
+        await queueService.setIndex(deviceId, pi);
+        await this.loadTrack(deviceId, queue[pi]!);
+        await autoQueueService.ensure(deviceId, pending.trackId);
+        return;
+      }
+      // pending item vanished from the queue — fall through to normal selection
     }
 
     // shuffle: pick a different random track from the queue
@@ -326,6 +350,83 @@ export class PlaybackService {
     await this.patchState(deviceId, { state: "paused", position: st.position, updatedAt: Date.now() });
   }
 
+  // --- gapless prefetch (player.prefetch / player.prefetchClear) ---
+
+  private clearPrefetchTimer(deviceId: string): void {
+    const t = this.prefetchTimers.get(deviceId);
+    if (t) clearTimeout(t);
+    this.prefetchTimers.delete(deviceId);
+  }
+
+  /**
+   * Decide which track plays next *right now* (same rules as next(): shuffle
+   * random-different, repeat-all wrap, else linear index+1). The result is
+   * stored as pendingNext so the decision the player buffers is the one used.
+   */
+  private pickNext(
+    queue: QueueItem[],
+    currentIndex: number,
+    state: Pick<PlaybackState, "shuffle" | "repeat">,
+  ): { item: QueueItem; index: number } | null {
+    if (state.repeat === "one") return null; // replaying the same track — nothing to prefetch
+    if (state.shuffle && queue.length > 1) {
+      let target = currentIndex;
+      while (target === currentIndex) target = Math.floor(Math.random() * queue.length);
+      return { item: queue[target]!, index: target };
+    }
+    if (state.repeat === "all" && queue.length > 0 && currentIndex >= queue.length - 1) {
+      return { item: queue[0]!, index: 0 };
+    }
+    const nextIndex = currentIndex + 1;
+    if (nextIndex < queue.length) return { item: queue[nextIndex]!, index: nextIndex };
+    return null; // queue exhausted (auto-queue may refill later)
+  }
+
+  /**
+   * Schedule player.prefetch for the upcoming track so mpv buffers it before
+   * the current one ends (gapless). Skipped when: repeat-one, unknown track
+   * duration, no next track, or the player is offline.
+   */
+  private schedulePrefetch(deviceId: string, currentTrack: Track): void {
+    this.clearPrefetchTimer(deviceId);
+    this.pendingNext.delete(deviceId);
+    if (!currentTrack.duration || currentTrack.duration <= 0) return;
+    void (async () => {
+      const st = (await this.getState(deviceId)) ?? EMPTY_STATE(deviceId);
+      if (st.state !== "playing") return;
+      if (st.repeat === "one") return;
+      const queue = await queueService.get(deviceId);
+      const next = this.pickNext(queue, await queueService.getIndex(deviceId), st);
+      if (!next) return;
+      this.pendingNext.set(deviceId, { trackId: next.item.track.id, track: next.item.track });
+      const lead = Number(process.env.PREFETCH_LEAD_MS ?? PREFETCH_LEAD_MS);
+      const delay = Math.max(0, (currentTrack.duration - lead / 1000) * 1000);
+      const timer = setTimeout(() => {
+        const p = this.pendingNext.get(deviceId);
+        if (!p) return;
+        if (!sendToPlayer(deviceId, { type: "player.prefetch", trackId: p.trackId, media: { mode: "id", youtubeId: p.trackId } })) {
+          // player offline — drop the pending prefetch silently
+          this.pendingNext.delete(deviceId);
+        }
+      }, delay);
+      timer.unref?.();
+      this.prefetchTimers.set(deviceId, timer);
+    })().catch(() => null);
+  }
+
+  /**
+   * Queue changed (add/remove/reorder/clear) or playback was intervened:
+   * cancel any in-flight prefetch so mpv never plays a track the user no
+   * longer expects, then re-pick for the current track.
+   */
+  async invalidatePrefetch(deviceId: string): Promise<void> {
+    this.clearPrefetchTimer(deviceId);
+    this.pendingNext.delete(deviceId);
+    sendToPlayer(deviceId, { type: "player.prefetchClear" });
+    const st = (await this.getState(deviceId)) ?? EMPTY_STATE(deviceId);
+    if (st.state === "playing" && st.track) this.schedulePrefetch(deviceId, st.track);
+  }
+
   async getState(deviceId: string): Promise<PlaybackState | null> {
     const raw = await redis.get(RedisKeys.deviceState(deviceId));
     return raw ? (JSON.parse(raw) as PlaybackState) : null;
@@ -353,6 +454,9 @@ export class PlaybackService {
     // Phase 9: history is recorded once the track actually plays ≥ threshold
     // (in applyPlayerReport) — not on load (a yt-dlp failure must not count)
     this.historyRecorded.delete(deviceId);
+    // gapless: pre-pick the next track now and schedule player.prefetch so the
+    // player buffers it before this track ends
+    this.schedulePrefetch(deviceId, item.track);
   }
 
   /** Background metadata enrichment for tracks missing artist (playlist radio). */

@@ -353,6 +353,89 @@ describe("player registry / reconnect", () => {
   });
 });
 
+describe("gapless prefetch", () => {
+  it("prefetches the next track before the current one ends (linear)", async () => {
+    process.env.PREFETCH_LEAD_MS = "1000"; // 3s track → prefetch fires after 2s
+    try {
+      const p = new FakePlayer(url());
+      await p.opened;
+      await p.auth(DEVICE, DEV_TOKEN);
+      await p.next("player.ready");
+      await p.next("player.setVolume");
+
+      await api("POST", `/api/devices/${DEVICE}/queue/clear`, {});
+      await api("POST", `/api/devices/${DEVICE}/queue`, { track: { ...track("P1"), duration: 3 } });
+      await api("POST", `/api/devices/${DEVICE}/queue`, { track: track("P2") });
+      await api("POST", `/api/devices/${DEVICE}/play`, { trackId: "P1", track: { ...track("P1"), duration: 3 } });
+      await p.next("player.load");
+
+      const prefetch = (await p.next("player.prefetch", 5000)) as { trackId: string };
+      expect(prefetch.trackId).toBe("P2");
+      p.close();
+    } finally {
+      delete process.env.PREFETCH_LEAD_MS;
+    }
+  });
+
+  it("cancels the prefetch when the queue changes (prefetchClear)", async () => {
+    process.env.PREFETCH_LEAD_MS = "1000";
+    try {
+      const p = new FakePlayer(url());
+      await p.opened;
+      await p.auth(DEVICE, DEV_TOKEN);
+      await p.next("player.ready");
+      await p.next("player.setVolume");
+
+      await api("POST", `/api/devices/${DEVICE}/queue/clear`, {});
+      await api("POST", `/api/devices/${DEVICE}/queue`, { track: { ...track("P1"), duration: 3 } });
+      await api("POST", `/api/devices/${DEVICE}/queue`, { track: track("P2") });
+      await api("POST", `/api/devices/${DEVICE}/play`, { trackId: "P1", track: { ...track("P1"), duration: 3 } });
+      await p.next("player.load");
+      await p.next("player.prefetch", 5000); // buffered
+
+      await api("POST", `/api/devices/${DEVICE}/queue/clear`, {});
+      const clear = await p.next("player.prefetchClear", 5000);
+      expect(clear.type).toBe("player.prefetchClear");
+      p.close();
+    } finally {
+      delete process.env.PREFETCH_LEAD_MS;
+    }
+  });
+
+  it("reuses the prefetched pick when a shuffled track ends (no re-pick)", async () => {
+    process.env.PREFETCH_LEAD_MS = "1000";
+    try {
+      const p = new FakePlayer(url());
+      await p.opened;
+      await p.auth(DEVICE, DEV_TOKEN);
+      await p.next("player.ready");
+      await p.next("player.setVolume");
+
+      await api("POST", `/api/devices/${DEVICE}/queue/clear`, {});
+      await api("POST", `/api/devices/${DEVICE}/queue`, { track: { ...track("P1"), duration: 3 } });
+      await api("POST", `/api/devices/${DEVICE}/queue`, { track: track("P2") });
+      await api("POST", `/api/devices/${DEVICE}/queue`, { track: track("P3") });
+      await api("POST", `/api/devices/${DEVICE}/shuffle`, { shuffle: true });
+      await api("POST", `/api/devices/${DEVICE}/play`, { trackId: "P1", track: { ...track("P1"), duration: 3 } });
+      await p.next("player.load");
+
+      const prefetch = (await p.next("player.prefetch", 5000)) as { trackId: string };
+      expect(["P2", "P3"]).toContain(prefetch.trackId);
+
+      // let the anti auto-next loop guard (3s since last load) expire, then
+      // end the track → the server must load the SAME track the player
+      // already buffered (a fresh random pick could be the other one)
+      await new Promise((r) => setTimeout(r, 1600));
+      p.send({ type: "player.trackEnded", deviceId: DEVICE });
+      const load = (await p.next("player.load", 5000)) as { trackId: string };
+      expect(load.trackId).toBe(prefetch.trackId);
+      p.close();
+    } finally {
+      delete process.env.PREFETCH_LEAD_MS;
+    }
+  });
+});
+
 describe("player disconnect grace (UX)", () => {
   it("parks a playing track as paused when the player stays offline past the grace window", async () => {
     process.env.PLAYER_DC_GRACE_MS = "300";

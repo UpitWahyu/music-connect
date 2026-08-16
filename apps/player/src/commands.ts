@@ -38,6 +38,16 @@ export function makeCommandHandler(mpv: Mpv, state: PlayerState): CommandHandler
         state.status = "stopped";
         await mpv.stop();
         break;
+      case "player.prefetch":
+        // gapless: buffer the upcoming track in mpv's playlist (no state
+        // change — it is not playing yet; mpv switches to it at eof)
+        await mpv.appendPrefetch(mediaToMpvUrl(cmd.media));
+        break;
+      case "player.prefetchClear":
+        // cancel a stale prefetch (queue changed / user skipped) — the
+        // currently playing entry is kept, the rest of the playlist drops
+        await mpv.clearPlaylist();
+        break;
     }
   };
 }

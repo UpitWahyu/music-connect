@@ -82,6 +82,9 @@ export class Mpv extends EventEmitter {
         // audio-only: yt-dlp picks the best audio stream only (no video track) —
         // much less bandwidth, faster start (YouTube Music: opus ~130kbps)
         "--ytdl-format=bestaudio/best",
+        // gapless: start buffering the next playlist entry before the current
+        // one ends (paired with loadfile ... append from player.prefetch)
+        "--prefetch-playlist=yes",
         this.ipcArg,
       ],
       {
@@ -248,6 +251,9 @@ export class Mpv extends EventEmitter {
   }
 
   async load(url: string, position?: number): Promise<void> {
+    // playlist-clear first: any prefetched entry (player.prefetch) is now stale
+    // — the server just decided to play something else (skip/seek/other track)
+    await this.command(["playlist-clear"]).catch(() => null);
     // position rides along with loadfile (start=N, absolute) — atomic, no seek
     // race; falls back to plain load + seek when options are rejected
     const pos = position && position > 0 ? Math.floor(position) : 0;
@@ -297,6 +303,19 @@ export class Mpv extends EventEmitter {
 
   async seek(position: number): Promise<void> {
     await this.command(["seek", position, "absolute"]);
+  }
+
+  /** Gapless: append the upcoming track to the playlist — mpv (with
+   *  --prefetch-playlist=yes) starts buffering it while the current track
+   *  plays, then switches automatically when it ends. */
+  async appendPrefetch(url: string): Promise<void> {
+    await this.command(["loadfile", url, "append"]);
+  }
+
+  /** Cancel a pending prefetch (queue changed / user skipped). mpv keeps the
+   *  currently playing entry and drops the rest of the playlist. */
+  async clearPlaylist(): Promise<void> {
+    await this.command(["playlist-clear"]).catch(() => null);
   }
 
   async setVolume(volume: number): Promise<void> {

@@ -69,4 +69,13 @@ export const serverCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("player.seek"), position: z.number().finite().min(0) }),
   z.object({ type: z.literal("player.setVolume"), volume: z.number().finite().min(0).max(100) }),
   z.object({ type: z.literal("player.stop") }),
+  z.object({
+    type: z.literal("player.prefetch"),
+    trackId: z.string().min(1),
+    media: z.union([
+      z.object({ mode: z.literal("id"), youtubeId: z.string().min(1) }),
+      z.object({ mode: z.literal("url"), url: z.string().min(1) }),
+    ]),
+  }),
+  z.object({ type: z.literal("player.prefetchClear") }),
 ]);

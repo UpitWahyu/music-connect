@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, onMounted, onUnmounted } from "vue";
 import { ListMusic, Music2, Play, Sparkles, Heart, FolderPlus, ChevronUp, ChevronDown, Trash2 } from "lucide-vue-next";
 import { api, type QueueItemDTO } from "../lib/api";
 import { store, refreshQueue, refreshState, refreshPlaylists, refreshFavorites } from "../composables/useMusic";
@@ -115,6 +115,43 @@ async function moveItem(itemId: string, dir: -1 | 1): Promise<void> {
 
 const playingIndex = computed(() => store.queueIndex);
 
+// --- auto-scroll to the playing track: on page load and when the tab becomes
+// visible again (returning from background). Never steals the scroll from a
+// user who is actively reading/dragging the queue. ---
+const queueListRef = ref<HTMLElement | null>(null);
+let lastUserScrollAt = 0;
+
+function scrollToActive(): void {
+  const container = queueListRef.value;
+  if (!container) return;
+  if (Date.now() - lastUserScrollAt < 2500) return; // user is interacting
+  const el = container.querySelector<HTMLElement>("[data-playing='true']");
+  if (!el) return;
+  const cRect = container.getBoundingClientRect();
+  const eRect = el.getBoundingClientRect();
+  // center the item inside the 45vh box (only this container scrolls)
+  const targetTop = container.scrollTop + (eRect.top - cRect.top) - (cRect.height / 2 - eRect.height / 2);
+  container.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
+}
+
+function onQueueScroll(): void {
+  lastUserScrollAt = Date.now();
+}
+
+function onVisibilityChange(): void {
+  if (document.visibilityState === "visible") scrollToActive();
+}
+
+onMounted(() => {
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  // the queue list may still be loading — retry once it has rendered
+  setTimeout(scrollToActive, 400);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("visibilitychange", onVisibilityChange);
+});
+
 // --- play item ---
 async function playItem(itemId: string): Promise<void> {
   if (!store.selectedDevice) return;
@@ -187,11 +224,12 @@ async function togglePlaylist(playlistId: string): Promise<void> {
       </button>
     </div>
 
-    <div class="queue-scroll min-h-0 flex-1 overflow-y-auto pr-1">
+    <div ref="queueListRef" class="queue-scroll min-h-0 flex-1 overflow-y-auto pr-1" @scroll.passive="onQueueScroll">
     <ul v-if="store.queue.length" class="divide-y divide-white/5">
       <li
         v-for="(item, i) in store.queue"
         :key="item.id"
+        :data-playing="i === playingIndex ? 'true' : undefined"
         class="relative flex cursor-grab items-center gap-3 py-2 text-sm transition active:cursor-grabbing"
         :class="dragOverId === item.id ? 'border-t-2 border-green-500' : 'border-t border-transparent hover:bg-white/5'"
         :draggable="!!store.selectedDevice"

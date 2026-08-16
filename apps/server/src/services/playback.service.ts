@@ -16,6 +16,8 @@ const HANDOFF_TIMEOUT_MS = Number(process.env.HANDOFF_TIMEOUT_MS ?? 5000);
 const HISTORY_MIN_SECONDS = Number(process.env.HISTORY_RECORD_SECONDS ?? 10);
 /** How many seconds before a track ends the next track is prefetched. */
 const PREFETCH_LEAD_MS = Number(process.env.PREFETCH_LEAD_MS ?? 20000);
+/** Stream errors tolerated per track before it is skipped (Termux resilience). */
+const MAX_TRACK_RETRIES = Number(process.env.MAX_TRACK_RETRIES ?? 2);
 
 const EMPTY_STATE = (deviceId: string): PlaybackState => ({
   deviceId,
@@ -211,13 +213,42 @@ export class PlaybackService {
   }
 
   /** Player → server: track finished (PRD §25). */
-  async onTrackEnded(deviceId: string): Promise<void> {
+  async onTrackEnded(deviceId: string, reason: "eof" | "error" = "eof"): Promise<void> {
     incCounter("music_playback_commands_total");
     // anti-loop: ignore if the track was replaced less than 3s ago (a
     // stale end-file from the previous track must not skip the new one)
     const last = this.lastLoadAt.get(deviceId) ?? 0;
     if (Date.now() - last < 3000) return;
+    // stream failure (Termux / weak WiFi / YouTube throttle): retry the SAME
+    // track a few times before giving up and advancing — the user asked for
+    // this song, a transient network blip must not skip it
+    if (reason === "error") {
+      const retried = await this.retryTrack(deviceId);
+      if (retried) return;
+    }
     await this.next(deviceId);
+  }
+
+  /** MAX_TRACK_RETRIES stream errors per track before it is skipped. */
+  private readonly trackRetries = new Map<string, { trackId: string; count: number }>();
+
+  private async retryTrack(deviceId: string): Promise<boolean> {
+    const st = (await this.getState(deviceId)) ?? EMPTY_STATE(deviceId);
+    if (!st.track) return false;
+    const cur = this.trackRetries.get(deviceId);
+    const count = cur && cur.trackId === st.track.id ? cur.count : 0;
+    if (count >= MAX_TRACK_RETRIES) return false; // give up — advance to the next
+    this.trackRetries.set(deviceId, { trackId: st.track.id, count: count + 1 });
+    // reload from the queue position when possible; direct-play tracks have no
+    // queue entry so fall back to the in-memory track payload
+    const queue = await queueService.get(deviceId);
+    const idx = await queueService.getIndex(deviceId);
+    const item =
+      queue[idx] && queue[idx]!.track.id === st.track.id
+        ? queue[idx]!
+        : ({ id: `retry-${st.track.id}`, track: st.track } as QueueItem);
+    await this.loadTrack(deviceId, item, true); // retry: keep the budget
+    return true;
   }
 
   /**
@@ -432,7 +463,10 @@ export class PlaybackService {
     return raw ? (JSON.parse(raw) as PlaybackState) : null;
   }
 
-  private async loadTrack(deviceId: string, item: QueueItem): Promise<void> {
+  private async loadTrack(deviceId: string, item: QueueItem, fromRetry = false): Promise<void> {
+    // any new load that is NOT a stream-error retry resets the per-track
+    // retry budget (play/next/previous/transfer all start a fresh attempt)
+    if (!fromRetry) this.trackRetries.delete(deviceId);
     const media: MediaRef = { mode: "id", youtubeId: item.track.id };
     const volume = await deviceService.getVolume(deviceId);
     this.requireOnline(sendToPlayer(deviceId, { type: "player.load", trackId: item.track.id, media, volume }));

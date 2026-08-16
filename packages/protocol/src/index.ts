@@ -44,7 +44,7 @@ export type PlayerCommand =
 export type PlayerEvent =
   | { type: "player.heartbeat"; deviceId: string; position: number; status: PlaybackStatus }
   | { type: "player.state"; report: PlayerStateReport }
-  | { type: "player.trackEnded"; deviceId: string }
+  | { type: "player.trackEnded"; deviceId: string; reason?: "eof" | "error" }
   | { type: "player.error"; code: string; message: string };
 
 /** Client (controller) → Server events (PRD §22). */

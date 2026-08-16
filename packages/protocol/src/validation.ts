@@ -47,7 +47,12 @@ export const playerStateReportSchema = z.object({
 export const playerEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("player.heartbeat"), deviceId: z.string().min(1), position: z.number().finite(), status: z.enum(["playing", "paused", "stopped", "offline"]) }),
   z.object({ type: z.literal("player.state"), report: playerStateReportSchema }),
-  z.object({ type: z.literal("player.trackEnded"), deviceId: z.string().min(1) }),
+  z.object({
+    type: z.literal("player.trackEnded"),
+    deviceId: z.string().min(1),
+    // "error" = stream failed (retry on the server); absent/eof = natural end
+    reason: z.enum(["eof", "error"]).optional(),
+  }),
   z.object({ type: z.literal("player.error"), code: z.string().min(1), message: z.string() }),
 ]);
 

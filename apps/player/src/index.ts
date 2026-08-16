@@ -84,9 +84,10 @@ setInterval(async () => {
 // Only a natural end ("eof") or a hard playback error advances the queue.
 // "stop"/"redirect" happen when the server itself replaced the track
 // (player.load) — forwarding those would loop through the whole queue.
+// reason is forwarded so the server can retry on "error" instead of skipping.
 mpv.on("end-file", (reason: string) => {
   if (reason === "eof" || reason === "error") {
-    conn.send({ type: "player.trackEnded", deviceId: credentials.deviceId });
+    conn.send({ type: "player.trackEnded", deviceId: credentials.deviceId, reason });
   }
 });
 

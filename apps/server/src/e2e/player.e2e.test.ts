@@ -353,6 +353,56 @@ describe("player registry / reconnect", () => {
   });
 });
 
+describe("stream error retry", () => {
+  it("retries the same track on stream error instead of skipping", async () => {
+    const p = new FakePlayer(url());
+    await p.opened;
+    await p.auth(DEVICE, DEV_TOKEN);
+    await p.next("player.ready");
+    await p.next("player.setVolume");
+
+    await api("POST", `/api/devices/${DEVICE}/queue/clear`, {});
+    await api("POST", `/api/devices/${DEVICE}/queue`, { track: track("R1") });
+    await api("POST", `/api/devices/${DEVICE}/queue`, { track: track("R2") });
+    await api("POST", `/api/devices/${DEVICE}/play`, { trackId: "R1", track: track("R1") });
+    await p.next("player.load");
+    await new Promise((r) => setTimeout(r, 3200)); // anti auto-next guard expires
+
+    p.send({ type: "player.trackEnded", deviceId: DEVICE, reason: "error" });
+    const retry = (await p.next("player.load")) as { trackId: string };
+    expect(retry.trackId).toBe("R1"); // same track reloaded — not skipped
+    p.close();
+  });
+
+  it("advances to the next track after repeated stream errors", async () => {
+    const p = new FakePlayer(url());
+    await p.opened;
+    await p.auth(DEVICE, DEV_TOKEN);
+    await p.next("player.ready");
+    await p.next("player.setVolume");
+
+    await api("POST", `/api/devices/${DEVICE}/queue/clear`, {});
+    await api("POST", `/api/devices/${DEVICE}/queue`, { track: track("R1") });
+    await api("POST", `/api/devices/${DEVICE}/queue`, { track: track("R2") });
+    await api("POST", `/api/devices/${DEVICE}/play`, { trackId: "R1", track: track("R1") });
+    await p.next("player.load");
+    await new Promise((r) => setTimeout(r, 3200));
+
+    // two retries are tolerated…
+    for (let i = 0; i < 2; i++) {
+      p.send({ type: "player.trackEnded", deviceId: DEVICE, reason: "error" });
+      const retry = (await p.next("player.load")) as { trackId: string };
+      expect(retry.trackId).toBe("R1");
+      await new Promise((r) => setTimeout(r, 3200));
+    }
+    // …the third failure gives up and advances to the next track
+    p.send({ type: "player.trackEnded", deviceId: DEVICE, reason: "error" });
+    const next = (await p.next("player.load")) as { trackId: string };
+    expect(next.trackId).toBe("R2");
+    p.close();
+  });
+});
+
 describe("gapless prefetch", () => {
   it("prefetches the next track before the current one ends (linear)", async () => {
     process.env.PREFETCH_LEAD_MS = "1000"; // 3s track → prefetch fires after 2s

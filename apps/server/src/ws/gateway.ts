@@ -181,8 +181,10 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
       }
 
       if (event.type === "player.trackEnded") {
-        // PRD §25: track finished → server decides (auto-next + auto-queue)
-        void playbackService.onTrackEnded(deviceId);
+        // PRD §25: track finished → server decides (auto-next + auto-queue).
+        // reason "error" → retry the same track before advancing (Termux /
+        // weak-network streams fail far more often than natural ends).
+        void playbackService.onTrackEnded(deviceId, event.reason ?? "eof");
         return;
       }
     });

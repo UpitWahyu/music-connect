@@ -85,7 +85,6 @@ export class Mpv extends EventEmitter {
         // audio-only: yt-dlp picks the best audio stream only (no video track) —
         // much less bandwidth, faster start (YouTube Music: opus ~130kbps)
         "--ytdl-format=bestaudio/best",
-        "--prefetch-playlist=yes",
         this.ipcArg,
       ],
       {

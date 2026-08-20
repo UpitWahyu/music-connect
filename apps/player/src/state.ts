@@ -14,8 +14,10 @@ export class PlayerState {
   duration = 0; // authoritative duration, synced from mpv
   volume = 70;
   queueIndex = 0;
+  /** Track id appended to mpv's playlist (gapless v2) — the NEXT track. */
+  prefetchedTrackId: string | null = null;
 
-  setTrack(trackId: string, media: MediaRef): void {
+  setTrack(trackId: string, media: MediaRef | null): void {
     this.trackId = trackId;
     this.media = media;
     this.position = 0;
@@ -25,6 +27,17 @@ export class PlayerState {
 
   currentTrackId(): string | null {
     return this.trackId;
+  }
+
+  /** The appended entry just started playing (end-file eof) → adopt it. */
+  consumePrefetched(): string | null {
+    const id = this.prefetchedTrackId;
+    this.prefetchedTrackId = null;
+    return id;
+  }
+
+  clearPrefetched(): void {
+    this.prefetchedTrackId = null;
   }
 
   toReport(deviceId: string, now: number = Date.now()): PlayerStateReport {

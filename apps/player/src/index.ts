@@ -41,8 +41,12 @@ conn.on("ready", () => {
 });
 conn.on("command", (cmd) => {
   void handleCommand(cmd).catch((e) => {
-    // a failed mpv command must never kill the player agent
+    // a failed mpv command must never kill the player agent; for a load that
+    // failed to resolve, report an honest error right away (no 12s wait)
     console.error("[player] command failed:", cmd.type, e instanceof Error ? e.message : e);
+    if (cmd.type === "player.load") {
+      conn.send({ type: "player.trackEnded", deviceId: credentials!.deviceId, reason: "error" });
+    }
   });
   // watch the load: if mpv never actually starts, report an honest error
   if (cmd.type === "player.load") armStartWatchdog(cmd.trackId);
@@ -112,7 +116,15 @@ function armStartWatchdog(trackId: string): void {
 mpv.on("end-file", (reason: string) => {
   if (reason === "eof" || reason === "error") {
     if (startWatchdog) clearTimeout(startWatchdog);
-    conn.send({ type: "player.trackEnded", deviceId: credentials.deviceId, reason });
+    // gapless v2: on a natural end mpv already switched to the appended
+    // entry — adopt it as the current track so reports carry the right id
+    if (reason === "eof") {
+      const nextTrackId = state.consumePrefetched();
+      if (nextTrackId) state.setTrack(nextTrackId, null);
+    } else {
+      state.clearPrefetched();
+    }
+    conn.send({ type: "player.trackEnded", deviceId: credentials!.deviceId, reason });
   }
 });
 

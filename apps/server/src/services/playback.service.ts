@@ -246,6 +246,26 @@ export class PlaybackService {
       }
     } else {
       this.errorStreak.delete(deviceId); // a natural end = healthy playback
+      // gapless v2: the player's mpv ALREADY switched to the appended entry
+      // (prefetch) — adopt it in server state WITHOUT sending player.load
+      // (a load would restart the track that just began playing).
+      const pending = this.pendingNext.get(deviceId);
+      if (pending) {
+        const queue = await queueService.get(deviceId);
+        const pi = queue.findIndex((x) => x.track.id === pending.trackId);
+        if (pi >= 0) {
+          this.pendingNext.delete(deviceId);
+          this.clearPrefetchTimer(deviceId);
+          this.trackRetries.delete(deviceId);
+          await queueService.setIndex(deviceId, pi);
+          await this.patchState(deviceId, { track: queue[pi]!.track, state: "playing", position: 0 });
+          this.historyRecorded.delete(deviceId);
+          void autoQueueService.ensure(deviceId, pending.trackId);
+          this.schedulePrefetch(deviceId, queue[pi]!.track);
+          return;
+        }
+        // pending item vanished from the queue — fall through to next()
+      }
     }
     await this.next(deviceId);
   }
@@ -456,13 +476,13 @@ export class PlaybackService {
       const queue = await queueService.get(deviceId);
       const next = this.pickNext(queue, await queueService.getIndex(deviceId), st);
       if (!next) return;
-      this.pendingNext.set(deviceId, { trackId: next.item.track.id, track: next.item.track });
+      // pendingNext is set ONLY when the prefetch actually fires — a natural
+      // end before that falls back to a regular (loading) next().
       const lead = Number(process.env.PREFETCH_LEAD_MS ?? PREFETCH_LEAD_MS);
       const delay = Math.max(0, (currentTrack.duration - lead / 1000) * 1000);
       const timer = setTimeout(() => {
-        const p = this.pendingNext.get(deviceId);
-        if (!p) return;
-        if (!sendToPlayer(deviceId, { type: "player.prefetch", trackId: p.trackId, media: { mode: "id", youtubeId: p.trackId } })) {
+        this.pendingNext.set(deviceId, { trackId: next.item.track.id, track: next.item.track });
+        if (!sendToPlayer(deviceId, { type: "player.prefetch", trackId: next.item.track.id, media: { mode: "id", youtubeId: next.item.track.id } })) {
           // player offline — drop the pending prefetch silently
           this.pendingNext.delete(deviceId);
         }

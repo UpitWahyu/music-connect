@@ -1,7 +1,7 @@
 import type { PlayerCommand } from "@music-connect/protocol";
 import type { Mpv } from "./mpv.js";
 import type { PlayerState } from "./state.js";
-import { mediaToMpvUrl } from "./resolver.js";
+import { mediaToMpvUrl, resolveStreamUrl } from "./resolver.js";
 
 export type CommandHandler = (cmd: PlayerCommand) => Promise<void>;
 
@@ -9,11 +9,17 @@ export type CommandHandler = (cmd: PlayerCommand) => Promise<void>;
 export function makeCommandHandler(mpv: Mpv, state: PlayerState): CommandHandler {
   return async (cmd) => {
     switch (cmd.type) {
-      case "player.load":
+      case "player.load": {
+        // resolve-first: get a real stream URL via yt-dlp, then hand mpv a
+        // plain URL (no mpv-internal yt-dlp integration that can stall).
+        // Resolve failures throw → the caller reports trackEnded error.
+        const url = cmd.media.mode === "url" ? cmd.media.url : await resolveStreamUrl(cmd.media.youtubeId);
         state.setTrack(cmd.trackId, cmd.media);
-        await mpv.load(mediaToMpvUrl(cmd.media), cmd.position);
+        state.clearPrefetched(); // a fresh load invalidates any appended entry
+        await mpv.load(url, cmd.position);
         if (cmd.volume !== undefined) await mpv.setVolume(cmd.volume);
         break;
+      }
       case "player.play":
         state.status = "playing";
         await mpv.play();
@@ -36,16 +42,26 @@ export function makeCommandHandler(mpv: Mpv, state: PlayerState): CommandHandler
         break;
       case "player.stop":
         state.status = "stopped";
+        state.clearPrefetched();
         await mpv.stop();
         break;
-      case "player.prefetch":
-        // gapless: buffer the upcoming track in mpv's playlist (no state
-        // change — it is not playing yet; mpv switches to it at eof)
-        await mpv.appendPrefetch(mediaToMpvUrl(cmd.media));
+      case "player.prefetch": {
+        // gapless v2: resolve the NEXT track's URL NOW (not when it starts),
+        // append it to mpv's playlist — mpv switches to it seamlessly at eof.
+        // Best-effort: a resolve failure must not disturb the current track.
+        try {
+          const url = cmd.media.mode === "url" ? cmd.media.url : await resolveStreamUrl(cmd.media.youtubeId);
+          await mpv.appendPrefetch(url);
+          state.prefetchedTrackId = cmd.trackId;
+        } catch (e) {
+          console.error("[player] prefetch resolve failed — skipping:", e instanceof Error ? e.message : e);
+        }
         break;
+      }
       case "player.prefetchClear":
         // cancel a stale prefetch (queue changed / user skipped) — the
         // currently playing entry is kept, the rest of the playlist drops
+        state.clearPrefetched();
         await mpv.clearPlaylist();
         break;
     }

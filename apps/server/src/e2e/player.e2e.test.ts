@@ -478,12 +478,13 @@ describe("gapless prefetch", () => {
       expect(["P2", "P3"]).toContain(prefetch.trackId);
 
       // let the anti auto-next loop guard (3s since last load) expire, then
-      // end the track → the server must load the SAME track the player
-      // already buffered (a fresh random pick could be the other one)
+      // end the track → the server must ADOPT the buffered pick WITHOUT a
+      // reload (a player.load would restart the track that just began)
       await new Promise((r) => setTimeout(r, 1600));
-      p.send({ type: "player.trackEnded", deviceId: DEVICE });
-      const load = (await p.next("player.load", 5000)) as { trackId: string };
-      expect(load.trackId).toBe(prefetch.trackId);
+      p.send({ type: "player.trackEnded", deviceId: DEVICE, reason: "eof" });
+      await expect(p.next("player.load", 1500)).rejects.toThrow("timeout"); // gapless: no reload
+      const st = await playbackService.getState(DEVICE);
+      expect(st?.track?.id).toBe(prefetch.trackId); // same decision, adopted
       p.close();
     } finally {
       delete process.env.PREFETCH_LEAD_MS;

@@ -42,13 +42,12 @@ export class PlaybackService {
   private lastLoadAt = new Map<string, number>();
   /** Per-device in-process mutex for state mutations (4.2). */
   private readonly stateChains = new Map<string, Promise<void>>();
-  /** deviceId → trackId already recorded in history (9: threshold-once). */
+  /** 9: device → trackId already recorded in history (9: threshold-once). */
   private readonly historyRecorded = new Map<string, string>();
   /** deviceId → prefetch timer for the upcoming track (gapless). */
   private readonly prefetchTimers = new Map<string, NodeJS.Timeout>();
-  /** deviceId → the exact next track the player is already buffering. */
+  /** deviceId → the pre-picked next track (single source of decision). */
   private readonly pendingNext = new Map<string, { trackId: string; track: Track }>();
-
   async play(deviceId: string, trackId?: string, track?: Track): Promise<void> {
     incCounter("music_playback_commands_total");
     if (trackId) {
@@ -423,6 +422,9 @@ export class PlaybackService {
    * duration, no next track, or the player is offline.
    */
   private schedulePrefetch(deviceId: string, currentTrack: Track): void {
+    // opt-out (PREFETCH_ENABLED=false): weak devices (Termux/Android) may
+    // choke on mpv playlist prefetching — skip it entirely
+    if (process.env.PREFETCH_ENABLED === "false") return;
     this.clearPrefetchTimer(deviceId);
     this.pendingNext.delete(deviceId);
     if (!currentTrack.duration || currentTrack.duration <= 0) return;

@@ -85,8 +85,6 @@ export class Mpv extends EventEmitter {
         // audio-only: yt-dlp picks the best audio stream only (no video track) —
         // much less bandwidth, faster start (YouTube Music: opus ~130kbps)
         "--ytdl-format=bestaudio/best",
-        // gapless: start buffering the next playlist entry before the current
-        // one ends (paired with loadfile ... append from player.prefetch)
         "--prefetch-playlist=yes",
         this.ipcArg,
       ],
@@ -327,11 +325,13 @@ export class Mpv extends EventEmitter {
     await this.command(["seek", position, "absolute"]);
   }
 
-  /** Gapless: append the upcoming track to the playlist — mpv (with
-   *  --prefetch-playlist=yes) starts buffering it while the current track
-   *  plays, then switches automatically when it ends. */
+  /** Gapless: append the upcoming track to the playlist (mpv plays it
+   *  automatically once the current entry ends). Best-effort — if the
+   *  player/device chokes on playlist prefetching, the server can opt out
+   *  (PREFETCH_ENABLED=false) and this becomes a no-op. */
   async appendPrefetch(url: string): Promise<void> {
-    await this.command(["loadfile", url, "append"]);
+    if (process.env.PREFETCH_ENABLED === "false") return;
+    await this.command(["loadfile", url, "append"]).catch(() => null);
   }
 
   /** Cancel a pending prefetch (queue changed / user skipped). mpv keeps the

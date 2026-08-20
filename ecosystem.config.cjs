@@ -21,7 +21,7 @@ module.exports = {
       name: "music-server",
       cwd: path.join(__dirname, "apps/server"),
       script: "dist/index.js",
-      env: { ...env, PORT: "41019", HOST: "0.0.0.0", NODE_ENV: "production" },
+      env: { ...env, PORT: "41019", HOST: "0.0.0.0", NODE_ENV: "production", PREFETCH_ENABLED: "false" },
       max_memory_restart: "512M", // youtubei.js sessions are memory-hungry
       time: true,
     },

@@ -184,6 +184,9 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
         // PRD §25: track finished → server decides (auto-next + auto-queue).
         // reason "error" → retry the same track before advancing (Termux /
         // weak-network streams fail far more often than natural ends).
+        incCounter(
+          event.reason === "error" ? "music_trackended_error_total" : "music_trackended_eof_total",
+        );
         void playbackService.onTrackEnded(deviceId, event.reason ?? "eof");
         return;
       }

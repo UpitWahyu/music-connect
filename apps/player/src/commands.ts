@@ -17,7 +17,8 @@ export function makeCommandHandler(mpv: Mpv, state: PlayerState): CommandHandler
         state.setTrack(cmd.trackId, cmd.media);
         state.clearPrefetched(); // a fresh load invalidates any appended entry
         await mpv.load(url, cmd.position);
-        if (cmd.volume !== undefined) await mpv.setVolume(cmd.volume);
+        // volume sync on a fresh track: short ramp (no jump, no delay)
+        if (cmd.volume !== undefined) await mpv.setVolumeSmooth(cmd.volume, 300);
         break;
       }
       case "player.play":
@@ -37,8 +38,9 @@ export function makeCommandHandler(mpv: Mpv, state: PlayerState): CommandHandler
         await mpv.seek(cmd.position);
         break;
       case "player.setVolume":
+        // smooth ramp — the UI slider reports the target, the player glides
         state.volume = cmd.volume;
-        await mpv.setVolume(cmd.volume);
+        await mpv.setVolumeSmooth(cmd.volume);
         break;
       case "player.stop":
         state.status = "stopped";

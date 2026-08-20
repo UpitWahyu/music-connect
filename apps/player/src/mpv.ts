@@ -11,6 +11,27 @@ export interface MpvState {
   idle: boolean;
 }
 
+/** Duration of a full-range volume transition (smooth, no jump). */
+const VOLUME_RAMP_MS = Number(process.env.VOLUME_RAMP_MS ?? 900);
+
+/**
+ * Pure ramp plan (exported for tests): step size/duration for a smooth
+ * volume transition. Returns null when no ramp is needed (already there).
+ */
+export function volumeRampPlan(
+  current: number,
+  target: number,
+  rampMs: number,
+): { steps: number; stepMs: number; delta: number } | null {
+  const clamped = Math.max(0, Math.min(130, Math.round(target)));
+  const diff = clamped - current;
+  if (Math.abs(diff) < 1 || rampMs <= 0) return null;
+  // 2% per step → ramp duration ≈ rampMs regardless of distance
+  const steps = Math.max(2, Math.min(60, Math.round(Math.abs(diff) / 2)));
+  const stepMs = Math.max(25, Math.round(rampMs / steps));
+  return { steps, stepMs, delta: diff / steps };
+}
+
 interface PendingCommand {
   resolve: (value: unknown) => void;
   reject: (err: Error) => void;
@@ -118,6 +139,10 @@ export class Mpv extends EventEmitter {
     if (this.ipcRetryTimer) {
       clearTimeout(this.ipcRetryTimer);
       this.ipcRetryTimer = null;
+    }
+    if (this.rampTimer) {
+      clearTimeout(this.rampTimer);
+      this.rampTimer = null;
     }
     if (this.sock) {
       this.sock.destroy();
@@ -344,7 +369,51 @@ export class Mpv extends EventEmitter {
     await this.command(["set_property", "volume", volume]);
   }
 
+  async getVolume(): Promise<number> {
+    const d = await this.command(["get_property", "volume"]).catch(() => null);
+    return typeof d === "number" ? d : this.state.volume;
+  }
+
+  // Smooth volume: ramp from the current value to the target instead of a
+  // hard jump. A new target (slider drag, load sync) restarts from wherever
+  // the ramp is right now — never fights the previous ramp.
+  private rampTimer: NodeJS.Timeout | null = null;
+
+  async setVolumeSmooth(target: number, rampMs = VOLUME_RAMP_MS): Promise<void> {
+    if (this.rampTimer) {
+      clearTimeout(this.rampTimer);
+      this.rampTimer = null;
+    }
+    const clamped = Math.max(0, Math.min(130, Math.round(target)));
+    const current = Number(await this.getVolume().catch(() => this.state.volume));
+    const plan = volumeRampPlan(current, clamped, rampMs);
+    if (!plan) {
+      this.state.volume = clamped;
+      await this.command(["set_property", "volume", clamped]).catch(() => null);
+      return;
+    }
+    const { steps, stepMs, delta } = plan;
+    let pos = current;
+    const tick = (): void => {
+      this.rampTimer = null;
+      pos += delta;
+      const done = Math.abs(pos - clamped) <= Math.abs(delta) / 2;
+      const value = done ? clamped : Math.round(pos);
+      this.state.volume = value;
+      void this.command(["set_property", "volume", value]).catch(() => null);
+      if (!done) {
+        this.rampTimer = setTimeout(tick, stepMs);
+        this.rampTimer.unref?.();
+      }
+    };
+    tick();
+  }
+
   async stop(): Promise<void> {
+    if (this.rampTimer) {
+      clearTimeout(this.rampTimer);
+      this.rampTimer = null;
+    }
     await this.command(["stop"]).catch(() => null);
     this.state.idle = true;
     this.state.position = 0;

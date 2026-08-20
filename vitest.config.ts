@@ -2,7 +2,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    include: ["apps/server/src/**/*.test.ts"],
+    include: ["apps/server/src/**/*.test.ts", "apps/player/src/**/*.test.ts"],
     environment: "node",
     setupFiles: ["vitest.setup.ts"], // isolate tests on Redis db 9 (never flush prod data)
     hookTimeout: 30_000,

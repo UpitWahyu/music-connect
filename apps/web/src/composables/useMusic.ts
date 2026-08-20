@@ -1,6 +1,8 @@
 import { reactive } from "vue";
 import { api, getToken, setToken, type DeviceDTO, type FavoriteDTO, type PlaybackStateDTO, type PlaylistDTO, type QueueItemDTO } from "../lib/api";
 import { connectControllerWs } from "../lib/ws";
+import { showToast } from "./useToast";
+import { t } from "../i18n";
 
 export const store = reactive({
   authed: getToken() !== null,
@@ -165,6 +167,10 @@ export function startRealtime(): void {
         store.selectedDevice = id;
         void refreshAll();
       }
+    } else if (event.type === "playback.error") {
+      // 3 consecutive stream failures → the server stopped instead of burning
+      // the queue; tell the user something is broken (yt-dlp/network)
+      showToast(t("playback.streamError"), "error");
     }
   });
   disconnectWs = conn.disconnect;

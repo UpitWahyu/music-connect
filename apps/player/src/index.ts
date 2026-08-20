@@ -44,6 +44,8 @@ conn.on("command", (cmd) => {
     // a failed mpv command must never kill the player agent
     console.error("[player] command failed:", cmd.type, e instanceof Error ? e.message : e);
   });
+  // watch the load: if mpv never actually starts, report an honest error
+  if (cmd.type === "player.load") armStartWatchdog(cmd.trackId);
 });
 conn.connect();
 
@@ -76,7 +78,12 @@ setInterval(async () => {
   if (state.status === "playing") {
     state.position = await mpv.getTimePos().catch(() => state.position);
     state.duration = await mpv.getDuration().catch(() => state.duration); // real duration (mpv knows it even for oEmbed tracks)
-    conn.send({ type: "player.state", report: state.toReport(credentials.deviceId) });
+    // playback actually advanced → the start watchdog is satisfied
+    if (state.position > 0 && startWatchdog) {
+      clearTimeout(startWatchdog);
+      startWatchdog = null;
+    }
+    conn.send({ type: "player.state", report: state.toReport(credentials!.deviceId) });
   }
 }, config.stateReportMs);
 
@@ -85,8 +92,26 @@ setInterval(async () => {
 // "stop"/"redirect" happen when the server itself replaced the track
 // (player.load) — forwarding those would loop through the whole queue.
 // reason is forwarded so the server can retry on "error" instead of skipping.
+//
+// Honest-status watchdog: if a load never actually starts playing (resolve
+// failure, missing yt-dlp, dead stream) report it as a hard error instead of
+// sitting on "playing position 0" forever. The server retries once, then
+// skips — and stops entirely after 3 consecutive failures.
+let startWatchdog: NodeJS.Timeout | null = null;
+const startTimeoutMs = Number(process.env.PLAYER_START_TIMEOUT_MS ?? 12000);
+function armStartWatchdog(trackId: string): void {
+  if (startWatchdog) clearTimeout(startWatchdog);
+  startWatchdog = setTimeout(() => {
+    if (state.status === "playing" && state.currentTrackId() === trackId && state.position <= 0) {
+      console.error(`[player] track ${trackId} never started within ${startTimeoutMs}ms — reporting error`);
+      conn.send({ type: "player.trackEnded", deviceId: credentials!.deviceId, reason: "error" });
+    }
+  }, startTimeoutMs);
+  startWatchdog.unref?.();
+}
 mpv.on("end-file", (reason: string) => {
   if (reason === "eof" || reason === "error") {
+    if (startWatchdog) clearTimeout(startWatchdog);
     conn.send({ type: "player.trackEnded", deviceId: credentials.deviceId, reason });
   }
 });

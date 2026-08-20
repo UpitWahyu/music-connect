@@ -90,6 +90,8 @@ const dict: Record<Lang, Dict> = {
     clearAll: "Hapus semua",
     clearAllTitle: "Hapus semua riwayat",
     historyEmpty: "Belum ada riwayat — mulai putar sesuatu",
+    // playback
+    streamError: "Streaming gagal berulang — cek koneksi/yt-dlp perangkat pemutar",
   },
   en: {
     "tab.search": "Search",
@@ -168,6 +170,8 @@ const dict: Record<Lang, Dict> = {
     clearAll: "Clear all",
     clearAllTitle: "Clear all history",
     historyEmpty: "No history yet — start playing something",
+    // playback
+    streamError: "Streaming failed repeatedly — check the player device's connection/yt-dlp",
   },
 };
 

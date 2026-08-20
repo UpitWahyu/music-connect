@@ -16,8 +16,11 @@ const HANDOFF_TIMEOUT_MS = Number(process.env.HANDOFF_TIMEOUT_MS ?? 5000);
 const HISTORY_MIN_SECONDS = Number(process.env.HISTORY_RECORD_SECONDS ?? 10);
 /** How many seconds before a track ends the next track is prefetched. */
 const PREFETCH_LEAD_MS = Number(process.env.PREFETCH_LEAD_MS ?? 20000);
-/** Stream errors tolerated per track before it is skipped (Termux resilience). */
+/** Stream errors tolerated per track before it is skipped. */
 const MAX_TRACK_RETRIES = Number(process.env.MAX_TRACK_RETRIES ?? 2);
+/** Consecutive failed tracks before playback stops (instead of burning the
+ *  whole queue) — signals a broken yt-dlp/network/provider, not a blip. */
+const MAX_CONSECUTIVE_ERRORS = 3;
 
 const EMPTY_STATE = (deviceId: string): PlaybackState => ({
   deviceId,
@@ -227,12 +230,30 @@ export class PlaybackService {
     if (reason === "error") {
       const retried = await this.retryTrack(deviceId);
       if (retried) return;
+      // gave up on this track. After MAX_CONSECUTIVE_ERRORS tracks fail in a
+      // row something is broken (yt-dlp, network, provider) — stop instead of
+      // silently burning through the whole queue, and tell the controllers.
+      const streak = (this.errorStreak.get(deviceId) ?? 0) + 1;
+      this.errorStreak.set(deviceId, streak);
+      if (streak >= MAX_CONSECUTIVE_ERRORS) {
+        this.errorStreak.delete(deviceId);
+        this.clearPrefetchTimer(deviceId);
+        this.pendingNext.delete(deviceId);
+        this.trackRetries.delete(deviceId);
+        await this.patchState(deviceId, { state: "stopped", position: 0 });
+        broadcastToControllers({ type: "playback.error", deviceId, message: "STREAM_FAILED" });
+        return; // do NOT burn the rest of the queue
+      }
+    } else {
+      this.errorStreak.delete(deviceId); // a natural end = healthy playback
     }
     await this.next(deviceId);
   }
 
-  /** MAX_TRACK_RETRIES stream errors per track before it is skipped. */
+  /** deviceId → per-track stream-error retry budget. */
   private readonly trackRetries = new Map<string, { trackId: string; count: number }>();
+  /** deviceId → consecutive failed tracks (stops playback at threshold). */
+  private readonly errorStreak = new Map<string, number>();
 
   private async retryTrack(deviceId: string): Promise<boolean> {
     const st = (await this.getState(deviceId)) ?? EMPTY_STATE(deviceId);

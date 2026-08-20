@@ -65,6 +65,7 @@ export type ServerEvent =
   | { type: "device.updated"; deviceId: string; device: { id: string; online: boolean } }
   | { type: "device.selected"; deviceId: string }
   | { type: "queue.updated"; deviceId: string; queue: QueueItem[] }
+  | { type: "playback.error"; deviceId: string; message: string }
   | { type: "error"; code: string; message: string };
 
 /** First-message auth (PRD §41 D-07) — token never travels in the query string. */

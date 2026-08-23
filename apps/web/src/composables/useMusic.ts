@@ -1,5 +1,5 @@
 import { reactive } from "vue";
-import { api, getToken, setToken, type DeviceDTO, type FavoriteDTO, type PlaybackStateDTO, type PlaylistDTO, type QueueItemDTO } from "../lib/api";
+import { api, getToken, setToken, clearTokens, type DeviceDTO, type FavoriteDTO, type PlaybackStateDTO, type PlaylistDTO, type QueueItemDTO } from "../lib/api";
 import { connectControllerWs } from "../lib/ws";
 import { showToast } from "./useToast";
 import { t } from "../i18n";
@@ -16,8 +16,7 @@ export const store = reactive({
 });
 
 export async function login(username: string, password: string): Promise<void> {
-  const { token } = await api.login(username, password);
-  setToken(token);
+  await api.login(username, password);
   store.authed = true;
   await refreshDevices();
   // restore the account-wide selected device (cross-browser sync)
@@ -35,7 +34,7 @@ export async function login(username: string, password: string): Promise<void> {
 export function logout(): void {
   stopRealtime();
   stopPolling();
-  setToken(null);
+  clearTokens();
   store.authed = false;
   store.selectedDevice = null;
   store.devices = [];

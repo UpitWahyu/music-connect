@@ -2,16 +2,92 @@
 
 const API_BASE = "/api";
 
-let token: string | null = localStorage.getItem("mc_token");
+const TOKEN_KEY = "mc_token";
+const REFRESH_KEY = "mc_refresh_token";
+
+let token: string | null = localStorage.getItem(TOKEN_KEY);
+let refreshToken: string | null = localStorage.getItem(REFRESH_KEY);
 
 export function setToken(t: string | null): void {
   token = t;
-  if (t) localStorage.setItem("mc_token", t);
-  else localStorage.removeItem("mc_token");
+  if (t) localStorage.setItem(TOKEN_KEY, t);
+  else localStorage.removeItem(TOKEN_KEY);
 }
 
 export function getToken(): string | null {
   return token;
+}
+
+export function setRefreshToken(t: string | null): void {
+  refreshToken = t;
+  if (t) localStorage.setItem(REFRESH_KEY, t);
+  else localStorage.removeItem(REFRESH_KEY);
+}
+
+export function getRefreshToken(): string | null {
+  return refreshToken;
+}
+
+/** Wipe all auth state (call on logout / auth failure). */
+export function clearTokens(): void {
+  setToken(null);
+  setRefreshToken(null);
+}
+
+/**
+ * Decode the `exp` claim of a JWT WITHOUT verifying the signature
+ * (we just need the expiry to decide whether to refresh). Returns null
+ * if the token is malformed.
+ */
+function decodeJwtExp(t: string): number | null {
+  try {
+    const parts = t.split(".");
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(atob(parts[1]!.replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof payload.exp === "number" ? payload.exp : null;
+  } catch {
+    return null;
+  }
+}
+
+let refreshing: Promise<boolean> | null = null;
+
+/**
+ * Refresh the access token using the stored refresh token. Returns true on
+ * success (token + refreshToken updated in localStorage) and false on failure
+ * (caller should treat the session as expired). Concurrent callers share one
+ * in-flight refresh so we don't fire a storm of /refresh requests.
+ */
+async function tryRefresh(): Promise<boolean> {
+  if (refreshing) return refreshing;
+  refreshing = (async () => {
+    const rt = refreshToken;
+    if (!rt) return false;
+    try {
+      const res = await fetch(API_BASE + "/auth/refresh", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ refreshToken: rt }),
+      });
+      if (!res.ok) return false;
+      const data = (await res.json()) as { token: string; refreshToken?: string };
+      setToken(data.token);
+      if (data.refreshToken) setRefreshToken(data.refreshToken);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshing = null;
+    }
+  })();
+  return refreshing;
+}
+
+function redirectToLogin(): void {
+  clearTokens();
+  // SPA: drop to the login view. store.authed is derived from getToken() lazily
+  // by the app shell; a full reload guarantees a clean state.
+  if (typeof location !== "undefined") location.href = "/";
 }
 
 export interface TrackDTO {
@@ -82,10 +158,45 @@ export interface HistoryDTO {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  // Login and refresh are the only unauthenticated/auth-establishing calls —
+  // never try to refresh before them (no token yet, or we'd loop).
+  const isAuthBootstrap = path === "/auth/login" || path === "/auth/refresh";
+
+  if (!isAuthBootstrap && token) {
+    const exp = decodeJwtExp(token);
+    const now = Math.floor(Date.now() / 1000);
+    // Refresh if expired or expiring within 60s.
+    if (exp !== null && exp - now <= 60) {
+      const ok = await tryRefresh();
+      if (!ok) {
+        redirectToLogin();
+        throw new Error("SESSION_EXPIRED");
+      }
+    }
+  }
+
   const headers: Record<string, string> = {};
   if (token) headers.authorization = `Bearer ${token}`;
   if (init.body !== undefined) headers["content-type"] = "application/json";
   const res = await fetch(API_BASE + path, { ...init, headers });
+  if (res.status === 401 && !isAuthBootstrap) {
+    // Access token rejected despite not being "expired" per local clock —
+    // attempt one refresh, then retry once.
+    const ok = await tryRefresh();
+    if (ok) {
+      const retryHeaders: Record<string, string> = {};
+      if (token) retryHeaders.authorization = `Bearer ${token}`;
+      if (init.body !== undefined) retryHeaders["content-type"] = "application/json";
+      const retry = await fetch(API_BASE + path, { ...init, headers: retryHeaders });
+      if (!retry.ok) {
+        const body = (await retry.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${retry.status}`);
+      }
+      return retry.json() as Promise<T>;
+    }
+    redirectToLogin();
+    throw new Error("SESSION_EXPIRED");
+  }
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? `HTTP ${res.status}`);
@@ -94,8 +205,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  login: (username: string, password: string) =>
-    request<{ token: string }>("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
+  login: async (username: string, password: string) => {
+    const data = await request<{ token: string; refreshToken: string }>(
+      "/auth/login",
+      { method: "POST", body: JSON.stringify({ username, password }) },
+    );
+    setToken(data.token);
+    setRefreshToken(data.refreshToken);
+    return data;
+  },
 
   devices: () => request<DeviceDTO[]>("/devices"),
 

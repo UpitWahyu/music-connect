@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.1.2",
     "@fastify/cors": "^11.3.0",
     "@fastify/jwt": "^10.2.1",
     "@fastify/rate-limit": "^11.2.0",
@@ -20,6 +21,7 @@
     "@prisma/adapter-mariadb": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "dotenv": "^16.4.5",
+    "fast-jwt": "^6.3.2",
     "fastify": "^5.11.2",
     "ioredis": "^6.0.0",
     "youtubei.js": "^17.2.0",

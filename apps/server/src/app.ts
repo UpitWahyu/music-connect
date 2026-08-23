@@ -4,6 +4,7 @@ import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import rateLimit from "@fastify/rate-limit";
 import websocket from "@fastify/websocket";
+import cookie from "@fastify/cookie";
 import { config } from "./config.js";
 import { redis } from "./redis/client.js";
 import { prisma } from "./db/prisma.js";
@@ -39,6 +40,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   const corsOrigin = config.corsOrigin.length ? config.corsOrigin : true;
   await app.register(cors, { origin: corsOrigin });
   await app.register(jwt, { secret: config.jwtSecret });
+  await app.register(cookie);
   await app.register(rateLimit, { max: 300, timeWindow: "1 minute" }); // generous: web polls + volume debounce
   await app.register(websocket, { options: { maxPayload: 64 * 1024 } }); // 64 KB WS message cap
 
@@ -73,7 +75,21 @@ export async function buildApp(): Promise<FastifyInstance> {
   // public player pairing flow. WebSocket has its own first-message auth (D-07).
   app.addHook("onRequest", async (req, reply) => {
     const url = req.url.split("?")[0] ?? "";
-    if (url === "/api/auth/login" || url === "/api/player/pair" || url === "/healthz" || url === "/health" || url === "/ready" || url === "/metrics" || url.startsWith("/ws")) return;
+    // Public / bootstrap routes that must NOT require a valid access token:
+    // login, public player pairing, health, and the refresh/logout endpoints
+    // (refresh is called exactly when the access token is expired or missing).
+    if (
+      url === "/api/auth/login" ||
+      url === "/api/auth/refresh" ||
+      url === "/api/auth/logout" ||
+      url === "/api/player/pair" ||
+      url === "/healthz" ||
+      url === "/health" ||
+      url === "/ready" ||
+      url === "/metrics" ||
+      url.startsWith("/ws")
+    )
+      return;
     if (url.startsWith("/api/")) {
       try {
         await req.jwtVerify();

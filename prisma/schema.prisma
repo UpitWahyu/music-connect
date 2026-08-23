@@ -25,6 +25,18 @@ model User {
   playbackHistory  PlaybackHistory[]
   providerAccounts ProviderAccount[]
   settings         UserSetting[]
+  refreshTokens      RefreshToken[]
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique // hashed refresh JWT (lookup); raw JWT lives in cookie/response
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Device {

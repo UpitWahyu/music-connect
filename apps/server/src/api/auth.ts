@@ -1,6 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { prisma } from "../db/prisma.js";
+import {
+  hashRefreshToken,
+  signAccessToken,
+  signRefreshToken,
+  verifyRefreshToken,
+} from "../auth/tokens.js";
 
 export function hashPassword(password: string): string {
   const salt = randomBytes(16).toString("hex");
@@ -35,6 +41,38 @@ export async function ensureSeedUser(): Promise<void> {
   console.log(`[auth] no users in DB — seeded "${username}" from env (change the password after login)`);
 }
 
+// httpOnly cookie carrying the refresh token. The raw JWT is the value; the DB
+// stores only its hash. Secure flag is driven by NODE_ENV so local dev (http)
+// still works.
+const REFRESH_COOKIE_OPTS = {
+  httpOnly: true,
+  sameSite: "lax" as const,
+  path: "/",
+  secure: process.env.NODE_ENV === "production",
+};
+
+/**
+ * Persist a freshly-signed refresh token (by its hash) and return the raw JWT.
+ * Rotation: old tokens can be cleared via `revokePreviousHash`.
+ */
+async function issueRefreshToken(
+  userId: string,
+  revokePreviousHash?: string,
+): Promise<string> {
+  // Single active session per user: on login, drop any prior refresh tokens so
+  // a new login supersedes old ones (and the @unique hash can never collide).
+  if (revokePreviousHash) {
+    await prisma.refreshToken.deleteMany({ where: { userId, token: revokePreviousHash } });
+  } else {
+    await prisma.refreshToken.deleteMany({ where: { userId } });
+  }
+  const { token, expiresAt } = signRefreshToken(userId);
+  await prisma.refreshToken.create({
+    data: { userId, token: hashRefreshToken(token), expiresAt },
+  });
+  return token;
+}
+
 /**
  * Auth (PRD §30, D-03 single user, D-10 rate limit).
  * Credentials live in the DB (User table) — env only seeds the first one.
@@ -54,10 +92,79 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(401).send({ error: "INVALID_CREDENTIALS" });
       }
 
-      const token = app.jwt.sign({ sub: user.id, username: user.username }, { expiresIn: "12h" });
-      return { token };
+      const { token } = signAccessToken(user.id, user.username);
+      const refreshToken = await issueRefreshToken(user.id);
+      reply.setCookie("refreshToken", refreshToken, {
+        ...REFRESH_COOKIE_OPTS,
+        expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      });
+      return { token, refreshToken };
     },
   );
+
+  // Rotate a refresh token for a fresh access token (+ new refresh token).
+  // Accepts the refresh token in the request body OR an httpOnly cookie.
+  app.post(
+    "/api/auth/refresh",
+    {
+      config: { rateLimit: { max: 20, timeWindow: "1 minute" } },
+    },
+    async (req, reply) => {
+      const body = (req.body ?? {}) as { refreshToken?: string };
+      const raw = body.refreshToken ?? req.cookies?.refreshToken;
+      if (!raw) return reply.code(400).send({ error: "MISSING_REFRESH_TOKEN" });
+
+      const claims = verifyRefreshToken(raw);
+      if (!claims) return reply.code(401).send({ error: "INVALID_REFRESH_TOKEN" });
+
+      // Optional access token: if the caller also presents one, it MUST belong
+      // to the same user as the refresh token. A user presenting someone else's
+      // refresh token (tied to a different access subject) is rejected — this is
+      // the multi-user isolation guarantee (never break AuthorizationService).
+      if (req.headers.authorization) {
+        try {
+          await req.jwtVerify();
+          const accessSub = (req.user as { sub?: string }).sub;
+          if (accessSub && accessSub !== claims.sub) {
+            return reply.code(403).send({ error: "REFRESH_TOKEN_USER_MISMATCH" });
+          }
+        } catch {
+          // no/invalid access token — fine, refresh works standalone
+        }
+      }
+
+      // DB lookup by hash: proves this exact token was issued (not forged) and
+      // lets us enforce rotation — a replayed (already-rotated) token is gone.
+      const record = await prisma.refreshToken.findUnique({
+        where: { token: hashRefreshToken(raw) },
+      });
+      if (!record || record.expiresAt.getTime() < Date.now()) {
+        return reply.code(401).send({ error: "INVALID_REFRESH_TOKEN" });
+      }
+      const user = await prisma.user.findUnique({ where: { id: claims.sub } });
+      if (!user) return reply.code(401).send({ error: "INVALID_REFRESH_TOKEN" });
+
+      // Rotation: delete the used token, mint a new pair.
+      const { token } = signAccessToken(user.id, user.username);
+      const refreshToken = await issueRefreshToken(user.id, hashRefreshToken(raw));
+      reply.setCookie("refreshToken", refreshToken, {
+        ...REFRESH_COOKIE_OPTS,
+        expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      });
+      return { token, refreshToken };
+    },
+  );
+
+  // Logout: revoke the refresh token (cookie or body) so it can't be reused.
+  app.post("/api/auth/logout", async (req, reply) => {
+    const body = (req.body ?? {}) as { refreshToken?: string };
+    const raw = body.refreshToken ?? req.cookies?.refreshToken;
+    if (raw) {
+      await prisma.refreshToken.deleteMany({ where: { token: hashRefreshToken(raw) } });
+    }
+    reply.clearCookie("refreshToken", { path: "/" });
+    return { ok: true };
+  });
 
   // Change the password (DB-backed credentials — this is the source of truth).
   app.put(

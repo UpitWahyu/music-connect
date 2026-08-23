@@ -146,8 +146,9 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof SearchIcon }> = [
     </div>
   </div>
 
-  <!-- player bar: flat, stuck to the bottom (Spotify style) -->
-  <Player />
+  <!-- player bar: flat, stuck to the bottom (Spotify style).
+       Only render when authenticated — never on the login page. -->
+  <Player v-if="store.authed" />
 
   <!-- settings page -->
   <Settings v-if="showSettings" @close="showSettings = false" />

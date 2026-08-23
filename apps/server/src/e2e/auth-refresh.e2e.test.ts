@@ -86,6 +86,8 @@ describe("JWT refresh-token flow", () => {
   });
 
   it("rotates the refresh token: refresh returns a new access token, old refresh is invalidated", async () => {
+    // clean slate: multi-device support means tokens accumulate across logins
+    await prisma.refreshToken.deleteMany({ where: { userId: USER1 } });
     const first = await login("refreshe2e1", "rpass111");
     const before = await prisma.refreshToken.findMany({ where: { userId: USER1 } });
     expect(before.length).toBe(1);

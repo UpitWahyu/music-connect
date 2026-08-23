@@ -59,13 +59,15 @@ async function issueRefreshToken(
   userId: string,
   revokePreviousHash?: string,
 ): Promise<string> {
-  // Single active session per user: on login, drop any prior refresh tokens so
-  // a new login supersedes old ones (and the @unique hash can never collide).
+  // Multi-device: new logins add a refresh token without invalidating existing
+  // ones — each device keeps its own session.  Stale/expired tokens are
+  // cleaned up on login (best-effort) to keep the table small.
   if (revokePreviousHash) {
+    // rotation: delete the token that was just used
     await prisma.refreshToken.deleteMany({ where: { userId, token: revokePreviousHash } });
-  } else {
-    await prisma.refreshToken.deleteMany({ where: { userId } });
   }
+  // best-effort: drop expired tokens (7-day TTL) on every login
+  await prisma.refreshToken.deleteMany({ where: { userId, expiresAt: { lt: new Date() } } }).catch(() => null);
   const { token, expiresAt } = signRefreshToken(userId);
   await prisma.refreshToken.create({
     data: { userId, token: hashRefreshToken(token), expiresAt },

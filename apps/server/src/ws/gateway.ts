@@ -20,6 +20,7 @@ import {
   type SocketLike,
 } from "./registry.js";
 import { incCounter } from "../metrics.js";
+import { wsInFlightDec, wsInFlightInc, wsRateAllow } from "./ws-rate-limit.js";
 
 /**
  * WebSocket gateway (PRD §21-§22).
@@ -75,6 +76,12 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
       // only touch devices it owns — same rule as the REST preHandler (3.1).
       const deviceId = cmd.deviceId;
       if (!controllerUserId) return;
+      // P0#2: per-connection + per-user command rate limit (coalesced types
+      // like volume/seek are exempt — only the latest value matters).
+      if (!wsRateAllow(s, controllerUserId, cmd.type)) {
+        incCounter("music_ws_rate_limited_total");
+        return; // drop the command silently (no client error amplification)
+      }
       void (async () => {
         try {
           await authorizationService.assertDeviceAccess(controllerUserId as string, deviceId);
@@ -168,6 +175,13 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
         return;
       }
       const event = evt.data;
+      // P1#13: authenticated connection identity is the source of truth. The
+      // heartbeat carries a top-level deviceId (must match); state/trackEnded
+      // embed deviceId in nested fields which we deliberately ignore.
+      if ("deviceId" in event && event.deviceId && event.deviceId !== deviceId) {
+        s.close(4403, "DEVICE_ID_MISMATCH");
+        return;
+      }
       if (event.type === "player.heartbeat") {
         // PRD §18: heartbeat refreshes presence + last-seen
         void deviceService.markOnline(deviceId);
@@ -176,6 +190,7 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
 
       if (event.type === "player.state") {
         const report = event.report;
+        // ignore report.deviceId (P1#13) — use the authenticated connection's id
         void playbackService.applyPlayerReport(deviceId, report);
         return;
       }
@@ -183,11 +198,15 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
       if (event.type === "player.trackEnded") {
         // PRD §25: track finished → server decides (auto-next + auto-queue).
         // reason "error" → retry the same track before advancing (Termux /
-        // weak-network streams fail far more often than natural ends).
+        // weak-network streams fail far more often than natural ends.
         incCounter(
           event.reason === "error" ? "music_trackended_error_total" : "music_trackended_eof_total",
         );
-        void playbackService.onTrackEnded(deviceId, event.reason ?? "eof");
+        // P0#2: bound in-flight playback operations per device
+        if (!wsInFlightInc(deviceId ?? "")) return;
+        void playbackService.onTrackEnded(deviceId ?? "", event.reason ?? "eof").finally(() =>
+          wsInFlightDec(deviceId ?? ""),
+        );
         return;
       }
     });

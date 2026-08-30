@@ -30,7 +30,11 @@ module.exports = {
       cwd: path.join(__dirname, "apps/web"),
       script: "node_modules/vite/bin/vite.js",
       args: "preview --host 0.0.0.0 --port 41018",
-      env: { ...env, PREVIEW_TARGET: "http://localhost:41019" },
+      env: {
+        ...env,
+        PREVIEW_TARGET: "http://localhost:41019",
+        ALLOWED_HOSTS: "music.netw.my.id,music.netw.biz.id",
+      },
       max_memory_restart: "200M",
       time: true,
     },

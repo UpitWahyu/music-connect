@@ -45,6 +45,19 @@ export class PlaybackService {
   private lastLoadAt = new Map<string, number>();
   /** Per-device in-process mutex for state mutations (4.2). */
   private readonly stateChains = new Map<string, Promise<void>>();
+  /** P1 #11: per-device command queue — serialize mutating playback commands
+   *  (play/pause/next/seek/load/stop) so rapid bursts can't interleave and
+   *  leave Redis/DB/mpv/server state diverged. Coalesced commands (volume/
+   *  seek) are still applied immediately via patchState; this guards the
+   *  heavier transitions. */
+  private readonly commandChains = new Map<string, Promise<unknown>>();
+
+  private enqueueCommand<T>(deviceId: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.commandChains.get(deviceId) ?? Promise.resolve();
+    const run = prev.then(fn, fn) as Promise<T>;
+    this.commandChains.set(deviceId, run.catch(() => undefined));
+    return run;
+  }
   /** 9: device → trackId already recorded in history (9: threshold-once). */
   private readonly historyRecorded = new Map<string, string>();
   /** deviceId → prefetch timer for the upcoming track (gapless). */

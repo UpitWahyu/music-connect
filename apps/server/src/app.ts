@@ -57,8 +57,16 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
   });
 
-  // Prometheus-text metrics (scrape without auth, like /healthz)
-  app.get("/metrics", async (_req, reply) => {
+  // Prometheus-text metrics — protected behind a bearer token in production
+  // (P1 #9). In dev it stays open for local scraping, matching /healthz.
+  const metricsToken = process.env.METRICS_TOKEN;
+  app.get("/metrics", async (req, reply) => {
+    if (process.env.NODE_ENV === "production" && metricsToken) {
+      const auth = req.headers.authorization;
+      if (auth !== `Bearer ${metricsToken}`) {
+        return reply.code(401).send({ error: "UNAUTHORIZED" });
+      }
+    }
     reply.header("content-type", "text/plain; version=0.0.4; charset=utf-8");
     return metricsText();
   });
@@ -69,6 +77,13 @@ export async function buildApp(): Promise<FastifyInstance> {
     reply.header("X-Frame-Options", "DENY");
     reply.header("Referrer-Policy", "no-referrer");
     reply.header("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    // P2 #17: HSTS + COOP/CORP only when we are certain traffic is HTTPS
+    // (Caddy terminates TLS, so the app always sees a secure origin behind it).
+    if (process.env.NODE_ENV === "production") {
+      reply.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+      reply.header("Cross-Origin-Opener-Policy", "same-origin");
+      reply.header("Cross-Origin-Resource-Policy", "same-origin");
+    }
   });
 
   // Auth guard (PRD §30): all /api/* routes require a JWT except login and the

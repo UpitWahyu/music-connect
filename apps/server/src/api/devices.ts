@@ -6,8 +6,12 @@ import { prisma } from "../db/prisma.js";
 import { sha256 } from "../utils.js";
 
 function generatePairingCode(): string {
-  const part = (): string => String(randomBytes(2).readUInt16BE(0) % 1000).padStart(3, "0");
-  return `${part()}-${part()}`;
+  // audit P0 #3: 10-digit numeric code (was 6) — much larger search space so
+  // an Internet-exposed pairing endpoint can't be brute-forced even with the
+  // 3-attempt lock. Format groups of 3/3/4 for readability (XXX-XXX-XXXX).
+  const g3 = (): string => String(randomBytes(2).readUInt16BE(0) % 1000).padStart(3, "0");
+  const g4 = (): string => String(randomBytes(2).readUInt16BE(0) % 10000).padStart(4, "0");
+  return `${g3()}-${g3()}-${g4()}`;
 }
 
 /**
@@ -92,4 +96,39 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     await redis.srem(RedisKeys.devicesOnline(), id);
     return { ok: true };
   });
+
+  /** P0 #4: rotate a device's long-lived token (issue a new one, revoke old). */
+  app.post(
+    "/api/devices/:id/rotate-token",
+    { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const user = req.user as { sub?: string } | undefined;
+      if (!user?.sub) return reply.code(401).send({ error: "UNAUTHORIZED" });
+      const device = await prisma.device.findUnique({ where: { id }, select: { userId: true } });
+      if (!device) return reply.code(404).send({ error: "DEVICE_NOT_FOUND" });
+      if (device.userId !== user.sub) return reply.code(403).send({ error: "DEVICE_FORBIDDEN" });
+      const token = randomBytes(32).toString("hex");
+      await prisma.device.update({ where: { id }, data: { tokenHash: sha256(token), lastUsedAt: new Date() } });
+      return { deviceId: id, token };
+    },
+  );
+
+  /** P0 #4: revoke a device's token (player can no longer authenticate). */
+  app.post(
+    "/api/devices/:id/revoke-token",
+    { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const user = req.user as { sub?: string } | undefined;
+      if (!user?.sub) return reply.code(401).send({ error: "UNAUTHORIZED" });
+      const device = await prisma.device.findUnique({ where: { id }, select: { userId: true } });
+      if (!device) return reply.code(404).send({ error: "DEVICE_NOT_FOUND" });
+      if (device.userId !== user.sub) return reply.code(403).send({ error: "DEVICE_FORBIDDEN" });
+      // tokenHash = "" → the player's stored token no longer matches
+      await prisma.device.update({ where: { id }, data: { tokenHash: "" } });
+      await redis.srem(RedisKeys.devicesOnline(), id);
+      return { ok: true };
+    },
+  );
 }

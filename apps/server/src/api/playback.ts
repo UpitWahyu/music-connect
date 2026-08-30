@@ -1,13 +1,12 @@
 import type { FastifyInstance } from "fastify";
-import type { Track } from "@music-connect/types";
+import { trackSchema } from "@music-connect/protocol";
 import { extractPlaylistId } from "../utils.js";
+import { safeError } from "../utils.js";
 import { playbackService } from "../services/playback.service.js";
 import { authorizationService } from "../services/authorization.service.js";
 
 function fail(reply: { code: (n: number) => unknown }, e: unknown) {
-  return (reply.code(409) as unknown as { send: (o: unknown) => unknown }).send({
-    error: (e as Error).message,
-  });
+  return safeError(reply as { code: (n: number) => { send: (o: unknown) => unknown } }, e);
 }
 
 /** Playback control API (PRD §28, §23). */
@@ -19,10 +18,17 @@ export async function playbackRoutes(app: FastifyInstance): Promise<void> {
 
   app.post("/api/devices/:id/play", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body = (req.body ?? {}) as { trackId?: string; track?: Track };
+    const body = (req.body ?? {}) as { trackId?: string; track?: unknown };
     try {
-      if (body.trackId) await playbackService.play(id, body.trackId, body.track);
-      else await playbackService.play(id);
+      if (body.trackId) {
+        await playbackService.play(id, body.trackId);
+      } else if (body.track) {
+        const parsed = trackSchema.safeParse(body.track);
+        if (!parsed.success) return reply.code(400).send({ error: "INVALID_TRACK" });
+        await playbackService.play(id, parsed.data.id, parsed.data);
+      } else {
+        await playbackService.play(id);
+      }
       return { ok: true };
     } catch (e) {
       return fail(reply, e);
@@ -144,6 +150,13 @@ export async function playbackRoutes(app: FastifyInstance): Promise<void> {
       await playbackService.transfer(id, body.to);
       return { ok: true };
     } catch (e) {
+      // transfer throws known, non-sensitive business errors (HANDOFF_FAILED,
+      // NOTHING_TO_TRANSFER). Surface the code (not the raw message) so the UI
+      // can react — P1 #10 still applies to everything else via safeError().
+      const code = (e as Error).message;
+      if (code === "HANDOFF_FAILED" || code === "NOTHING_TO_TRANSFER") {
+        return reply.code(409).send({ error: code });
+      }
       return fail(reply, e);
     }
   });

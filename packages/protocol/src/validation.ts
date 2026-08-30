@@ -5,6 +5,28 @@
  */
 import { z } from "zod";
 
+// Audit P0 #5: validate Track request bodies at runtime (TypeScript types
+// vanish at runtime; an attacker could send arbitrary JSON). Bounds mirror
+// the PRD §14 normalized shape. The `id` is a provider id (YouTube video id).
+export const trackSchema = z.object({
+  id: z.string().min(1).max(64),
+  provider: z.string().min(1).max(64),
+  title: z.string().min(1).max(500),
+  artist: z.string().min(0).max(500),
+  album: z.string().max(500).optional(),
+  duration: z.number().finite().min(0).max(86400), // <= 24h
+  thumbnail: z.string().url().max(2048).optional().or(z.literal("")).optional(),
+});
+
+export const queueAddSchema = z.object({
+  track: trackSchema,
+  playNext: z.boolean().optional(),
+});
+
+export const reorderSchema = z.object({
+  order: z.array(z.string().min(1).max(64)).min(1).max(500),
+});
+
 // --- controller → server ---
 
 export const controllerAuthSchema = z.object({
@@ -57,14 +79,50 @@ export const playerEventSchema = z.discriminatedUnion("type", [
 ]);
 
 /** Server → Player commands (validated on the player side). */
+/** Audit P0 #6: restrict arbitrary media URLs sent to the player.
+ *  Only https is allowed, with a bounded length and an explicit host allowlist
+ *  of trusted stream hosts (YouTube/YT-Music/Google CDN). A player runs inside
+ *  the user's local network — an arbitrary URL could be used for SSRF into
+ *  internal services the public server itself can't reach. */
+const ALLOWED_URL_HOSTS = new Set([
+  "googlevideo.com",
+  "youtube.com",
+  "youtu.be",
+  "music.youtube.com",
+  "ytimg.com",
+  "ggpht.com",
+  "i.ytimg.com",
+]);
+
+export function safeMediaUrl(url: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "https:") return false;
+  if (u.hostname.length > 255) return false;
+  // match exact host or a *.host suffix (e.g. r1---sn-xxx.googlevideo.com)
+  const host = u.hostname.toLowerCase();
+  for (const allowed of ALLOWED_URL_HOSTS) {
+    if (host === allowed || host.endsWith(`.${allowed}`)) return true;
+  }
+  return false;
+}
+
+const mediaSchema = z.union([
+  z.object({ mode: z.literal("id"), youtubeId: z.string().min(1).max(32) }),
+  z
+    .object({ mode: z.literal("url"), url: z.string().min(1).max(2048) })
+    .refine((v) => safeMediaUrl(v.url), { message: "URL host not allowlisted (https YouTube/Google CDN only)" }),
+]);
+
 export const serverCommandSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("player.load"),
     trackId: z.string().min(1),
-    media: z.union([
-      z.object({ mode: z.literal("id"), youtubeId: z.string().min(1) }),
-      z.object({ mode: z.literal("url"), url: z.string().min(1) }),
-    ]),
+    media: mediaSchema,
     position: z.number().finite().min(0).optional(),
     volume: z.number().finite().min(0).max(100).optional(),
   }),
@@ -77,10 +135,7 @@ export const serverCommandSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("player.prefetch"),
     trackId: z.string().min(1),
-    media: z.union([
-      z.object({ mode: z.literal("id"), youtubeId: z.string().min(1) }),
-      z.object({ mode: z.literal("url"), url: z.string().min(1) }),
-    ]),
+    media: mediaSchema,
   }),
   z.object({ type: z.literal("player.prefetchClear") }),
 ]);

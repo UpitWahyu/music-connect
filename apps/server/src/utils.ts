@@ -1,8 +1,23 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 /** Device tokens are stored hashed (PRD §30) — never in plaintext. */
 export function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+/**
+ * Audit P1 #10: never leak raw internal error messages to clients.
+ * Clients get a stable error code + a request id (for server-side lookup);
+ * the real exception is logged with the request id for debugging.
+ */
+export function safeError(
+  reply: { code: (n: number) => { send: (o: unknown) => unknown } },
+  e: unknown,
+  code = 409,
+): unknown {
+  const requestId = randomUUID();
+  console.error(`[request-error ${requestId}]`, e);
+  return reply.code(code).send({ error: "INTERNAL_ERROR", requestId });
 }
 
 /**

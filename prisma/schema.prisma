@@ -50,8 +50,11 @@ model Device {
   userId    String?
   user      User?     @relation(fields: [userId], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  // P0 #4: device-token lifecycle — track rotation/usage for audit & expiry
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  lastUsedAt DateTime?
+  expiresAt DateTime? // optional token expiry (null = no expiry / rotated on demand)
 
   @@index([userId]) // device list per user (multi-user)
 }

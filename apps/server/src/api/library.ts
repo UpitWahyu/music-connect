@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import type { Track } from "@music-connect/types";
+import { trackSchema } from "@music-connect/protocol";
 import { RedisKeys } from "@music-connect/shared";
 import { playlistService } from "../services/playlist.service.js";
 import { favoriteService } from "../services/favorite.service.js";
@@ -7,6 +7,7 @@ import { historyService } from "../services/history.service.js";
 import { playbackService } from "../services/playback.service.js";
 import { authorizationService } from "../services/authorization.service.js";
 import { redis } from "../redis/client.js";
+import { safeError } from "../utils.js";
 import { broadcastToControllers } from "../ws/registry.js";
 
 /** User id from the verified JWT (auth guard in index.ts runs first). */
@@ -50,10 +51,10 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
 
   app.post("/api/playlists/:id/tracks", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body = (req.body ?? {}) as { track?: Track };
-    if (!body.track?.id) return reply.code(400).send({ error: "MISSING_TRACK" });
+    const parsed = trackSchema.safeParse((req.body ?? {}) as { track?: unknown });
+    if (!parsed.success || !parsed.data.id) return reply.code(400).send({ error: "MISSING_TRACK" });
     try {
-      const track = await playlistService.addTrack(userIdOf(req), id, body.track);
+      const track = await playlistService.addTrack(userIdOf(req), id, parsed.data);
       return { ok: true, track };
     } catch (e) {
       return reply.code(404).send({ error: (e as Error).message });
@@ -93,9 +94,9 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
   }));
 
   app.post("/api/favorites", async (req, reply) => {
-    const body = (req.body ?? {}) as { track?: Track };
-    if (!body.track?.id) return reply.code(400).send({ error: "MISSING_TRACK" });
-    return { ok: true, favorite: await favoriteService.add(userIdOf(req), body.track) };
+    const parsed = trackSchema.safeParse((req.body ?? {}) as { track?: unknown });
+    if (!parsed.success || !parsed.data.id) return reply.code(400).send({ error: "MISSING_TRACK" });
+    return { ok: true, favorite: await favoriteService.add(userIdOf(req), parsed.data) };
   });
 
   app.delete("/api/favorites/:trackId", async (req) => {

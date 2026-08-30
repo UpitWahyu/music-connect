@@ -52,7 +52,7 @@ describe("pairing", () => {
     });
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
-    expect(body.pairingCode).toMatch(/^\d{3}-\d{3}$/);
+    expect(body.pairingCode).toMatch(/^\d{3}-\d{3}-\d{4}$/);
     expect(body.expiresIn).toBe(300);
     const ttl = await redis.ttl(`music:pairing:${body.pairingCode}`);
     expect(ttl).toBeGreaterThan(290);
@@ -96,7 +96,7 @@ describe("pairing", () => {
       const res = await app.inject({
         method: "POST",
         url: "/api/player/pair",
-        payload: { pairingCode: "100-000" },
+        payload: { pairingCode: "100-000-0000" },
       });
       if (res.statusCode === 423) locked = true;
     }

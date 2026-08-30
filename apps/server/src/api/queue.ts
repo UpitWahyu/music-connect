@@ -1,8 +1,9 @@
 import type { FastifyInstance } from "fastify";
-import type { Track } from "@music-connect/types";
+import { trackSchema, queueAddSchema, reorderSchema } from "@music-connect/protocol";
 import { queueService } from "../services/queue.service.js";
 import { playbackService } from "../services/playback.service.js";
 import { broadcastToControllers } from "../ws/registry.js";
+import { safeError } from "../utils.js";
 
 /** Queue API (PRD §24, §28). Queue is server-managed, Redis-backed (D-05). */
 export async function queueRoutes(app: FastifyInstance): Promise<void> {
@@ -14,9 +15,9 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
 
   app.post("/api/devices/:id/queue", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body = (req.body ?? {}) as { track?: Track; playNext?: boolean };
-    if (!body.track) return reply.code(400).send({ error: "MISSING_TRACK" });
-    const queue = await queueService.add(id, body.track, body.playNext ? "next" : undefined);
+    const parsed = queueAddSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: "INVALID_TRACK" });
+    const queue = await queueService.add(id, parsed.data.track, parsed.data.playNext ? "next" : undefined);
     void playbackService.invalidatePrefetch(id); // queue order changed — re-pick next
     return { queue };
   });
@@ -41,19 +42,17 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
   /** Reorder queue by item ids (client-side sort commits the new order). */
   app.put("/api/devices/:id/queue/reorder", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body = (req.body ?? {}) as { order?: string[] };
-    if (!Array.isArray(body.order) || body.order.length === 0) {
-      return reply.code(400).send({ error: "MISSING_ORDER" });
-    }
+    const parsed = reorderSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: "MISSING_ORDER" });
     try {
-      const queue = await queueService.reorder(id, body.order);
-      broadcastToControllers({ type: "queue.updated", deviceId: id, queue }); // sync all browsers
-      void playbackService.invalidatePrefetch(id); // order changed — pending may be wrong
-      return { queue };
-    } catch (e) {
-      return reply.code(400).send({ error: (e as Error).message });
-    }
-  });
+      const queue = await queueService.reorder(id, parsed.data.order);
+   broadcastToControllers({ type: "queue.updated", deviceId: id, queue }); // sync all browsers
+   void playbackService.invalidatePrefetch(id); // order changed — pending may be wrong
+   return { queue };
+ } catch (e) {
+   return safeError(reply, e, 400);
+ }
+ });
 
   /** Play an existing queue item now. */
   app.post("/api/devices/:id/queue/:itemId/play", async (req, reply) => {

@@ -20,7 +20,11 @@ export class DeviceService {
   }
 
   async markOnline(deviceId: string): Promise<void> {
+    // P2 #18: give the online set a TTL so a crashed player can't stay "online"
+    // forever in Redis after a restart wipes the in-memory registry. Heartbeat
+    // (every ~30s) refreshes it well within the window.
     await redis.sadd(RedisKeys.devicesOnline(), deviceId);
+    await redis.expire(RedisKeys.devicesOnline(), 120); // 2 min — survives one missed beat
     await redis.hset(RedisKeys.deviceMeta(deviceId), "lastSeen", Date.now());
   }
 

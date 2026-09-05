@@ -123,6 +123,8 @@ async function syncSelectedDevice(): Promise<void> {
   }
 }
 
+let visibilityHandler: (() => void) | null = null;
+
 export function startPolling(): void {
   if (pollTimer) return;
   // 10s safety net — realtime updates arrive over WS now (player.state push)
@@ -131,11 +133,33 @@ export function startPolling(): void {
     void refreshDevices(); // keep device list fresh (auto-select when online appears)
     void syncSelectedDevice(); // device selection sync even if WS events drop
   }, 10_000);
+
+  // Proactive refresh: when the user returns to the tab (switches back from
+  // another tab, unlocks the phone, or restores a minimized window), immediately
+  // check token freshness and sync state — don't wait for the next polling tick.
+  // Browsers throttle setInterval to ~1 min in background tabs, so without this
+  // the first API call after returning might hit an expired token and trigger a
+  // 401 → unnecessary refresh round-trip (or worse, a stale 401 loop).
+  if (typeof document !== "undefined" && !visibilityHandler) {
+    visibilityHandler = () => {
+      if (document.visibilityState === "visible") {
+        // immediate token check + state sync — makes the transition seamless
+        void refreshAll();
+        void refreshDevices();
+        void syncSelectedDevice();
+      }
+    };
+    document.addEventListener("visibilitychange", visibilityHandler);
+  }
 }
 
 export function stopPolling(): void {
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = null;
+  if (visibilityHandler && typeof document !== "undefined") {
+    document.removeEventListener("visibilitychange", visibilityHandler);
+    visibilityHandler = null;
+  }
 }
 
 // --- realtime (WS) ---

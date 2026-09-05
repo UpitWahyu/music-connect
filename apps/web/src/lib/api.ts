@@ -174,9 +174,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const now = Math.floor(Date.now() / 1000);
     // Refresh if expired or expiring within 60s.
     if (exp !== null && exp - now <= 60) {
-      const ok = await tryRefresh();
-      if (!ok) {
-        redirectToLogin();
+      const refresh = await tryRefresh();
+      if (!refresh.ok) {
+        if (refresh.fatal) redirectToLogin();
         throw new Error("SESSION_EXPIRED");
       }
     }

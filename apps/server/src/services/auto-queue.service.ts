@@ -3,6 +3,7 @@ import { RedisKeys } from "@music-connect/shared";
 import { redis } from "../redis/client.js";
 import { musicService } from "./music.service.js";
 import { queueService } from "./queue.service.js";
+import { playbackService } from "./playback.service.js";
 
 /**
  * Auto-queue (Spotify-like): when the queue runs low, fetch recommended
@@ -26,7 +27,13 @@ export class AutoQueueService {
     if (!seedTrackId) return Promise.resolve(0);
     const existing = this.inflight.get(deviceId);
     if (existing) return existing; // concurrent ensure() reuses the in-flight one
-    const p = this.doEnsure(deviceId, seedTrackId)
+    // repeat-one ("loop") means the same track just replays — auto recommendations
+    // would never be reached, so skip the YT Music call entirely (saves provider load).
+    const p = (async () => {
+      const st = (await playbackService.getState(deviceId)) ?? null;
+      if (st?.repeat === "one") return 0;
+      return this.doEnsure(deviceId, seedTrackId);
+    })()
       .catch(() => 0) // auto-queue is best-effort — never block playback/handoff on the provider
       .finally(() => {
         this.inflight.delete(deviceId);

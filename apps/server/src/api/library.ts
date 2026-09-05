@@ -51,7 +51,7 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
 
   app.post("/api/playlists/:id/tracks", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const parsed = trackSchema.safeParse((req.body ?? {}) as { track?: unknown });
+    const parsed = trackSchema.safeParse((req.body as { track?: unknown })?.track);
     if (!parsed.success || !parsed.data.id) return reply.code(400).send({ error: "MISSING_TRACK" });
     try {
       const track = await playlistService.addTrack(userIdOf(req), id, parsed.data);
@@ -94,7 +94,7 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
   }));
 
   app.post("/api/favorites", async (req, reply) => {
-    const parsed = trackSchema.safeParse((req.body ?? {}) as { track?: unknown });
+    const parsed = trackSchema.safeParse((req.body as { track?: unknown })?.track);
     if (!parsed.success || !parsed.data.id) return reply.code(400).send({ error: "MISSING_TRACK" });
     return { ok: true, favorite: await favoriteService.add(userIdOf(req), parsed.data) };
   });

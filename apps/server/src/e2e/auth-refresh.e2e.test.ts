@@ -85,7 +85,7 @@ describe("JWT refresh-token flow", () => {
     expect(expired.statusCode).toBe(401);
   });
 
-  it("rotates the refresh token: refresh returns a new access token, old refresh is invalidated", async () => {
+  it("rotates the refresh token: refresh returns a new access token (race-safe within reuse window)", async () => {
     // clean slate: multi-device support means tokens accumulate across logins
     await prisma.refreshToken.deleteMany({ where: { userId: USER1 } });
     const first = await login("refreshe2e1", "rpass111");
@@ -107,18 +107,32 @@ describe("JWT refresh-token flow", () => {
     const ok = await app.inject({ method: "GET", url: "/api/devices", headers: authHeaders(body.token) });
     expect(ok.statusCode).toBe(200);
 
-    // Exactly one refresh token remains (the old one was deleted on rotation).
+    // Two refresh tokens now exist: the old one (extended by the reuse window)
+    // and the new rotated one. Both are valid within the window.
     const after = await prisma.refreshToken.findMany({ where: { userId: USER1 } });
-    expect(after.length).toBe(1);
-    expect(after[0]!.token).not.toBe(await hashOf(first.refreshToken));
+    expect(after.length).toBe(2);
 
-    // Replaying the OLD refresh token now fails (rotation invalidated it).
+    // Race-safe: replaying the OLD refresh token within the reuse window still
+    // works (200) — this is what stops a concurrent tab/device from being
+    // logged out when it holds the same old token. After the window it expires.
     const replay = await app.inject({
       method: "POST",
       url: "/api/auth/refresh",
       payload: { refreshToken: first.refreshToken },
     });
-    expect(replay.statusCode).toBe(401);
+    expect(replay.statusCode).toBe(200);
+  });
+
+  it("allows the same refresh token to be used again within the reuse window (no immediate logout)", async () => {
+    await prisma.refreshToken.deleteMany({ where: { userId: USER1 } });
+    const { refreshToken: rt } = await login("refreshe2e1", "rpass111");
+
+    // Use the SAME token twice in a row — both must succeed (the second refresh
+    // is served by the still-valid old token during the reuse window).
+    const a = await app.inject({ method: "POST", url: "/api/auth/refresh", payload: { refreshToken: rt } });
+    expect(a.statusCode).toBe(200);
+    const b = await app.inject({ method: "POST", url: "/api/auth/refresh", payload: { refreshToken: rt } });
+    expect(b.statusCode).toBe(200);
   });
 
   it("rejects a missing refresh token (400)", async () => {

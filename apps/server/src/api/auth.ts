@@ -51,6 +51,13 @@ const REFRESH_COOKIE_OPTS = {
   secure: process.env.NODE_ENV === "production",
 };
 
+// Race-safe refresh rotation: when a token is rotated we keep the old one valid
+// for a short window instead of hard-deleting it. The web stores the refresh
+// token in localStorage which is shared across browser tabs; if two tabs (or two
+// devices) refresh concurrently, the first rotation must not logout the second.
+// The existing expired-token cleanup prunes the old token once the window passes.
+const REFRESH_REUSE_WINDOW_MS = Number(process.env.REFRESH_REUSE_WINDOW_MS ?? 60_000);
+
 /**
  * Persist a freshly-signed refresh token (by its hash) and return the raw JWT.
  * Rotation: old tokens can be cleared via `revokePreviousHash`.
@@ -63,8 +70,14 @@ async function issueRefreshToken(
   // ones — each device keeps its own session.  Stale/expired tokens are
   // cleaned up on login (best-effort) to keep the table small.
   if (revokePreviousHash) {
-    // rotation: delete the token that was just used
-    await prisma.refreshToken.deleteMany({ where: { userId, token: revokePreviousHash } });
+    // Race-safe rotation: extend the old token's life by the reuse window
+    // instead of hard-deleting it. A concurrent refresh from another tab/device
+    // that still holds this same token succeeds within the window (no logout).
+    // The cleanup below removes it once expiresAt passes.
+    await prisma.refreshToken.updateMany({
+      where: { userId, token: revokePreviousHash },
+      data: { expiresAt: new Date(Date.now() + REFRESH_REUSE_WINDOW_MS) },
+    });
   }
   // best-effort: drop expired tokens (7-day TTL) on every login
   await prisma.refreshToken.deleteMany({ where: { userId, expiresAt: { lt: new Date() } } }).catch(() => null);

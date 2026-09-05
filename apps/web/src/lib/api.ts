@@ -50,32 +50,39 @@ function decodeJwtExp(t: string): number | null {
   }
 }
 
-let refreshing: Promise<boolean> | null = null;
+let refreshing: Promise<{ ok: boolean; fatal: boolean }> | null = null;
 
 /**
- * Refresh the access token using the stored refresh token. Returns true on
- * success (token + refreshToken updated in localStorage) and false on failure
- * (caller should treat the session as expired). Concurrent callers share one
- * in-flight refresh so we don't fire a storm of /refresh requests.
+ * Refresh the access token using the stored refresh token. Returns:
+ *   { ok: true }                         — token refreshed, session continues
+ *   { ok: false, fatal: true }           — definite auth failure (401/403): logout
+ *   { ok: false, fatal: false }          — transient (network/429/5xx): do NOT logout,
+ *                                           let the caller retry without nuking the session
+ * Concurrent callers share one in-flight refresh so we don't fire a storm of
+ * /refresh requests.
  */
-async function tryRefresh(): Promise<boolean> {
+async function tryRefresh(): Promise<{ ok: boolean; fatal: boolean }> {
   if (refreshing) return refreshing;
   refreshing = (async () => {
     const rt = refreshToken;
-    if (!rt) return false;
+    if (!rt) return { ok: false, fatal: true };
     try {
       const res = await fetch(API_BASE + "/auth/refresh", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ refreshToken: rt }),
       });
-      if (!res.ok) return false;
-      const data = (await res.json()) as { token: string; refreshToken?: string };
-      setToken(data.token);
-      if (data.refreshToken) setRefreshToken(data.refreshToken);
-      return true;
+      if (res.ok) {
+        const data = (await res.json()) as { token: string; refreshToken?: string };
+        setToken(data.token);
+        if (data.refreshToken) setRefreshToken(data.refreshToken);
+        return { ok: true, fatal: false };
+      }
+      // Only a definitive auth rejection is fatal; rate-limit/network blips are not.
+      return { ok: false, fatal: res.status === 401 || res.status === 403 };
     } catch {
-      return false;
+      // network error — transient; don't logout
+      return { ok: false, fatal: false };
     } finally {
       refreshing = null;
     }
@@ -181,9 +188,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(API_BASE + path, { ...init, headers });
   if (res.status === 401 && !isAuthBootstrap) {
     // Access token rejected despite not being "expired" per local clock —
-    // attempt one refresh, then retry once.
-    const ok = await tryRefresh();
-    if (ok) {
+    // attempt one refresh, then retry once. Only a *definitive* auth failure
+    // (401/403 from /refresh) logs the user out; transient issues (network blip,
+    // 429 rate-limit, 5xx) must NOT nuke the session — throw RETRY_LATER instead.
+    const refresh = await tryRefresh();
+    if (refresh.ok) {
       const retryHeaders: Record<string, string> = {};
       if (token) retryHeaders.authorization = `Bearer ${token}`;
       if (init.body !== undefined) retryHeaders["content-type"] = "application/json";
@@ -194,8 +203,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       }
       return retry.json() as Promise<T>;
     }
-    redirectToLogin();
-    throw new Error("SESSION_EXPIRED");
+    if (refresh.fatal) {
+      redirectToLogin();
+      throw new Error("SESSION_EXPIRED");
+    }
+    // transient refresh failure — keep tokens, let the UI retry
+    throw new Error("RETRY_LATER");
   }
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };

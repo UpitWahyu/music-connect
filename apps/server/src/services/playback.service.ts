@@ -405,12 +405,19 @@ export class PlaybackService {
       const threshold = duration > 0 ? Math.min(HISTORY_MIN_SECONDS, duration * 0.1) : HISTORY_MIN_SECONDS;
       if (report.position >= threshold) {
         this.historyRecorded.set(deviceId, report.trackId);
-        const device = await prisma.device
-          .findUnique({ where: { id: deviceId }, select: { userId: true } })
-          .catch(() => null);
-        if (device?.userId) {
-          await prisma.playbackHistory
-            .create({
+        let device: { userId: string | null } | null = null;
+        try {
+          device = await prisma.device.findUnique({ where: { id: deviceId }, select: { userId: true } });
+        } catch (err) {
+          console.warn(`[playback] failed to look up device ${deviceId} for history:`, err);
+        }
+        if (!device) {
+          console.warn(`[playback] device ${deviceId} not found in DB — history skipped`);
+        } else if (!device.userId) {
+          console.warn(`[playback] device ${deviceId} has no userId — history skipped (pairing may have lacked auth)`);
+        } else {
+          try {
+            await prisma.playbackHistory.create({
               data: {
                 userId: device.userId,
                 deviceId,
@@ -420,8 +427,10 @@ export class PlaybackService {
                 artist: track?.artist ?? "",
                 playedSeconds: Math.round(report.position ?? 0),
               },
-            })
-            .catch(() => null);
+            });
+          } catch (err) {
+            console.warn(`[playback] failed to write history for device ${deviceId}:`, err);
+          }
         }
       }
     }

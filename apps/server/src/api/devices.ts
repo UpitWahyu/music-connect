@@ -79,6 +79,10 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
       if (ownerId) await redis.del(RedisKeys.pairingUser(code));
       await redis.del(RedisKeys.pairingAttempts(code));
 
+      if (!ownerId) {
+        console.warn(`[devices] pairing code ${code} had no ownerId in Redis — device ${deviceId} will be paired without user assignment`);
+      }
+
       const token = randomBytes(32).toString("hex");
       const device = await prisma.device.upsert({
         where: { id: deviceId },

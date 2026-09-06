@@ -3,10 +3,8 @@
 const API_BASE = "/api";
 
 const TOKEN_KEY = "mc_token";
-const REFRESH_KEY = "mc_refresh_token";
 
 let token: string | null = localStorage.getItem(TOKEN_KEY);
-let refreshToken: string | null = localStorage.getItem(REFRESH_KEY);
 
 export function setToken(t: string | null): void {
   token = t;
@@ -18,27 +16,11 @@ export function getToken(): string | null {
   return token;
 }
 
-export function setRefreshToken(t: string | null): void {
-  refreshToken = t;
-  if (t) localStorage.setItem(REFRESH_KEY, t);
-  else localStorage.removeItem(REFRESH_KEY);
-}
-
-export function getRefreshToken(): string | null {
-  return refreshToken;
-}
-
 /** Wipe all auth state (call on logout / auth failure). */
 export function clearTokens(): void {
   setToken(null);
-  setRefreshToken(null);
 }
 
-/**
- * Decode the `exp` claim of a JWT WITHOUT verifying the signature
- * (we just need the expiry to decide whether to refresh). Returns null
- * if the token is malformed.
- */
 function decodeJwtExp(t: string): number | null {
   try {
     const parts = t.split(".");
@@ -53,35 +35,28 @@ function decodeJwtExp(t: string): number | null {
 let refreshing: Promise<{ ok: boolean; fatal: boolean }> | null = null;
 
 /**
- * Refresh the access token using the stored refresh token. Returns:
- *   { ok: true }                         — token refreshed, session continues
- *   { ok: false, fatal: true }           — definite auth failure (401/403): logout
- *   { ok: false, fatal: false }          — transient (network/429/5xx): do NOT logout,
- *                                           let the caller retry without nuking the session
- * Concurrent callers share one in-flight refresh so we don't fire a storm of
- * /refresh requests.
+ * Refresh the access token via the HttpOnly refresh-token cookie.
+ * The browser sends the cookie automatically (credentials: "include").
+ * Cross-tab coordination is handled server-side (reuse window) since all
+ * tabs share the same cookie.
  */
 async function tryRefresh(): Promise<{ ok: boolean; fatal: boolean }> {
   if (refreshing) return refreshing;
   refreshing = (async () => {
-    const rt = refreshToken;
-    if (!rt) return { ok: false, fatal: true };
     try {
       const res = await fetch(API_BASE + "/auth/refresh", {
         method: "POST",
+        credentials: "include",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ refreshToken: rt }),
+        body: "{}",
       });
       if (res.ok) {
-        const data = (await res.json()) as { token: string; refreshToken?: string };
+        const data = (await res.json()) as { token: string };
         setToken(data.token);
-        if (data.refreshToken) setRefreshToken(data.refreshToken);
         return { ok: true, fatal: false };
       }
-      // Only a definitive auth rejection is fatal; rate-limit/network blips are not.
       return { ok: false, fatal: res.status === 401 || res.status === 403 };
     } catch {
-      // network error — transient; don't logout
       return { ok: false, fatal: false };
     } finally {
       refreshing = null;
@@ -92,8 +67,6 @@ async function tryRefresh(): Promise<{ ok: boolean; fatal: boolean }> {
 
 function redirectToLogin(): void {
   clearTokens();
-  // SPA: drop to the login view. store.authed is derived from getToken() lazily
-  // by the app shell; a full reload guarantees a clean state.
   if (typeof location !== "undefined") location.href = "/";
 }
 
@@ -165,14 +138,11 @@ export interface HistoryDTO {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  // Login and refresh are the only unauthenticated/auth-establishing calls —
-  // never try to refresh before them (no token yet, or we'd loop).
   const isAuthBootstrap = path === "/auth/login" || path === "/auth/refresh";
 
   if (!isAuthBootstrap && token) {
     const exp = decodeJwtExp(token);
     const now = Math.floor(Date.now() / 1000);
-    // Refresh if expired or expiring within 60s.
     if (exp !== null && exp - now <= 60) {
       const refresh = await tryRefresh();
       if (!refresh.ok) {
@@ -187,10 +157,6 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (init.body !== undefined) headers["content-type"] = "application/json";
   const res = await fetch(API_BASE + path, { ...init, headers });
   if (res.status === 401 && !isAuthBootstrap) {
-    // Access token rejected despite not being "expired" per local clock —
-    // attempt one refresh, then retry once. Only a *definitive* auth failure
-    // (401/403 from /refresh) logs the user out; transient issues (network blip,
-    // 429 rate-limit, 5xx) must NOT nuke the session — throw RETRY_LATER instead.
     const refresh = await tryRefresh();
     if (refresh.ok) {
       const retryHeaders: Record<string, string> = {};
@@ -207,7 +173,6 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       redirectToLogin();
       throw new Error("SESSION_EXPIRED");
     }
-    // transient refresh failure — keep tokens, let the UI retry
     throw new Error("RETRY_LATER");
   }
   if (!res.ok) {
@@ -219,22 +184,18 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   login: async (username: string, password: string) => {
-    const data = await request<{ token: string; refreshToken: string }>(
-      "/auth/login",
-      { method: "POST", body: JSON.stringify({ username, password }) },
-    );
+    const data = await request<{ token: string }>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    });
     setToken(data.token);
-    setRefreshToken(data.refreshToken);
     return data;
   },
 
   devices: () => request<DeviceDTO[]>("/devices"),
-
   search: (q: string) => request<{ tracks: TrackDTO[] }>("/music/search?q=" + encodeURIComponent(q)),
-
   playlistMeta: (id: string) =>
     request<{ playlist: { title: string; tracks: TrackDTO[] } | null }>("/music/playlists/" + encodeURIComponent(id)),
-
   queue: (deviceId: string) => request<{ queue: QueueItemDTO[]; index: number }>(`/devices/${deviceId}/queue`),
   clearQueue: (deviceId: string) =>
     request<{ queue: QueueItemDTO[] }>(`/devices/${deviceId}/queue/clear`, { method: "POST", body: "{}" }),
@@ -279,7 +240,6 @@ export const api = {
       body: JSON.stringify({ playlistId }),
     }),
 
-  // --- Phase 8: persistent library ---
   createPlaylist: (name: string) => request<{ playlist: { id: string; name: string } }>("/playlists", { method: "POST", body: JSON.stringify({ name }) }),
   playlists: () => request<{ playlists: PlaylistDTO[] }>("/playlists"),
   playlistsWithTrack: (trackId: string) =>

@@ -113,7 +113,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         ...REFRESH_COOKIE_OPTS,
         expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       });
-      return { token, refreshToken };
+      // Refresh token lives ONLY in the HttpOnly cookie — never exposed in JSON.
+      // This prevents XSS from stealing the long-lived refresh credential and
+      // eliminates the need for client-side cross-tab refresh-token coordination.
+      return { token };
     },
   );
 
@@ -159,14 +162,17 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       const user = await prisma.user.findUnique({ where: { id: claims.sub } });
       if (!user) return reply.code(401).send({ error: "INVALID_REFRESH_TOKEN" });
 
-      // Rotation: delete the used token, mint a new pair.
+      // Rotation: extend old token (reuse window), mint a new one.
       const { token } = signAccessToken(user.id, user.username);
       const refreshToken = await issueRefreshToken(user.id, hashRefreshToken(raw));
       reply.setCookie("refreshToken", refreshToken, {
         ...REFRESH_COOKIE_OPTS,
         expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       });
-      return { token, refreshToken };
+      // Refresh token lives ONLY in the HttpOnly cookie — never exposed in JSON.
+      // This prevents XSS from stealing the long-lived refresh credential and
+      // eliminates the need for client-side cross-tab refresh-token coordination.
+      return { token };
     },
   );
 

@@ -38,7 +38,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // CORS: allowlist from env (comma-separated), permissive only in dev
   const corsOrigin = config.corsOrigin.length ? config.corsOrigin : true;
-  await app.register(cors, { origin: corsOrigin });
+  await app.register(cors, { origin: corsOrigin, credentials: true });
   await app.register(jwt, { secret: config.jwtSecret });
   await app.register(cookie);
   await app.register(rateLimit, { max: 300, timeWindow: "1 minute" }); // generous: web polls + volume debounce

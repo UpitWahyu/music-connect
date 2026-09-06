@@ -130,10 +130,17 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     async (req, reply) => {
       const body = (req.body ?? {}) as { refreshToken?: string };
       const raw = body.refreshToken ?? req.cookies?.refreshToken;
-      if (!raw) return reply.code(400).send({ error: "MISSING_REFRESH_TOKEN" });
+      console.log("[auth] refresh: hasCookie=", !!req.cookies?.refreshToken, "hasBody=", !!body.refreshToken);
+      if (!raw) {
+        console.log("[auth] refresh: 401 reason=", "NO_TOKEN");
+        return reply.code(400).send({ error: "MISSING_REFRESH_TOKEN" });
+      }
 
       const claims = verifyRefreshToken(raw);
-      if (!claims) return reply.code(401).send({ error: "INVALID_REFRESH_TOKEN" });
+      if (!claims) {
+        console.log("[auth] refresh: 401 reason=", "INVALID_JWT");
+        return reply.code(401).send({ error: "INVALID_REFRESH_TOKEN" });
+      }
 
       // Optional access token: if the caller also presents one, it MUST belong
       // to the same user as the refresh token. A user presenting someone else's
@@ -157,6 +164,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         where: { token: hashRefreshToken(raw) },
       });
       if (!record || record.expiresAt.getTime() < Date.now()) {
+        console.log("[auth] refresh: 401 reason=", "NOT_FOUND_IN_DB");
         return reply.code(401).send({ error: "INVALID_REFRESH_TOKEN" });
       }
       const user = await prisma.user.findUnique({ where: { id: claims.sub } });

@@ -128,9 +128,17 @@ let visibilityHandler: (() => void) | null = null;
 export function startPolling(): void {
   if (pollTimer) return;
   // 10s safety net — realtime updates arrive over WS now (player.state push)
-  pollTimer = setInterval(() => {
-    void refreshAll();
-    void refreshDevices(); // keep device list fresh (auto-select when online appears)
+  pollTimer = setInterval(async () => {
+    try {
+      await refreshAll();
+    } catch {
+      // refreshAll may throw RETRY_LATER on transient 401 — ignore, will retry next tick
+    }
+    try {
+      await refreshDevices();
+    } catch {
+      // transient network or auth error — skip, next tick retries
+    }
     void syncSelectedDevice(); // device selection sync even if WS events drop
   }, 10_000);
 

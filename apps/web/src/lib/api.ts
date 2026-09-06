@@ -44,6 +44,7 @@ async function tryRefresh(): Promise<{ ok: boolean; fatal: boolean }> {
   if (refreshing) return refreshing;
   refreshing = (async () => {
     try {
+      console.log("[auth] tryRefresh: sending cookie via credentials:include");
       const res = await fetch(API_BASE + "/auth/refresh", {
         method: "POST",
         credentials: "include",

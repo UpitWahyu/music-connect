@@ -50,6 +50,25 @@ export function isPlayerRegistered(deviceId: string): boolean {
   return !!s && s.readyState === 1;
 }
 
+/**
+ * SEC-09: force-close a device's live player socket (e.g. its token was
+ * revoked/rotated). The entry is dropped immediately so no further commands
+ * can be delivered while the close handshake is in flight.
+ */
+export function closePlayer(deviceId: string, code = 4401, reason = "TOKEN_REVOKED"): boolean {
+  const s = players.get(deviceId);
+  players.delete(deviceId);
+  deviceOwner.delete(deviceId);
+  setGauge("music_active_players", players.size);
+  if (!s) return false;
+  try {
+    s.close(code, reason);
+  } catch {
+    /* already closing */
+  }
+  return true;
+}
+
 export function addController(socket: SocketLike, userId: string | null = null): void {
   controllers.set(socket, userId);
   setGauge("music_active_controllers", controllers.size);

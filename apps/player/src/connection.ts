@@ -24,6 +24,13 @@ export class PlayerConnection extends EventEmitter {
   connect(): void {
     let ws: WebSocket;
     try {
+      // SEC-18: reject plaintext ws:// to a non-local server — the device
+      // token is sent on connect and must be protected by TLS off-host.
+      const u = new URL(this.url);
+      const host = u.hostname.replace(/^\[|\]$/g, "");
+      if (!["localhost", "127.0.0.1", "::1"].includes(host) && u.protocol !== "wss:") {
+        throw new Error("MUSIC_SERVER_URL harus wss:// untuk server non-lokal");
+      }
       ws = new WebSocket(this.url);
     } catch (e) {
       // invalid/missing server URL throws SYNCHRONOUSLY — never crash the agent

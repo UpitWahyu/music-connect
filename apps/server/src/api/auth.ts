@@ -232,6 +232,9 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         where: { id: user.id },
         data: { passwordHash: hashPassword(newPassword) },
       });
+      // SEC-05: a password change invalidates every existing session — delete
+      // all refresh tokens so previously issued credentials can't be reused.
+      await prisma.refreshToken.deleteMany({ where: { userId: user.id } });
       return { ok: true };
     },
   );

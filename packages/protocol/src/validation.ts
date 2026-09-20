@@ -9,7 +9,10 @@ import { z } from "zod";
 // vanish at runtime; an attacker could send arbitrary JSON). Bounds mirror
 // the PRD §14 normalized shape. The `id` is a provider id (YouTube video id).
 export const trackSchema = z.object({
-  id: z.string().min(1).max(64),
+  // SEC-17: provider ids are restricted to URL/Redis-safe characters so a
+  // caller can never smuggle separators, quotes or path fragments into cache
+  // keys, URLs or the player's IPC payload.
+  id: z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]{1,64}$/),
   provider: z.string().min(1).max(64),
   title: z.string().min(1).max(500),
   artist: z.string().min(0).max(500),

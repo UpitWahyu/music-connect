@@ -20,7 +20,7 @@ import {
   type SocketLike,
 } from "./registry.js";
 import { incCounter } from "../metrics.js";
-import { wsInFlightDec, wsInFlightInc, wsRateAllow } from "./ws-rate-limit.js";
+import { wsInFlightDec, wsInFlightInc, wsRateAllow, wsRateClear } from "./ws-rate-limit.js";
 
 /**
  * WebSocket gateway (PRD §21-§22).
@@ -125,12 +125,18 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
       })();
     });
 
-    s.on("close", () => removeController(s));
+    s.on("close", () => {
+      removeController(s);
+      wsRateClear(s); // SEC-14: release the per-connection rate-limit bucket
+    });
   });
 
   app.get("/ws/player", { websocket: true }, (socket) => {
     const s = socket as unknown as SocketLike;
     let deviceId: string | null = null;
+    // SEC-09: device-token expiry for this connection (null = no expiry).
+    let tokenExpiresAt: number | null = null;
+    let expiryTimer: NodeJS.Timeout | null = null;
     incCounter("music_ws_connections_total");
 
     s.on("message", (raw) => {
@@ -140,6 +146,12 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
       } catch {
         // malformed payload — never crash the socket
         s.close(4400, "BAD_JSON");
+        return;
+      }
+      // SEC-09: a long-lived socket must not outlive its device token. Reject
+      // every frame once the expiry passes (the timer below closes eagerly).
+      if (tokenExpiresAt !== null && Date.now() >= tokenExpiresAt) {
+        s.close(4401, "TOKEN_EXPIRED");
         return;
       }
       if (!deviceId) {
@@ -156,6 +168,13 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
             s.close(4401, "UNAUTHORIZED");
             return;
           }
+          // SEC-09: enforce the device token's optional expiry at auth time.
+          const exp = device.expiresAt?.getTime() ?? null;
+          if (exp !== null && exp <= Date.now()) {
+            s.close(4401, "TOKEN_EXPIRED");
+            return;
+          }
+          tokenExpiresAt = exp;
           deviceId = id;
             registerPlayer(id, s, device.userId ?? null); // owner scopes broadcasts
             await deviceService.markOnline(id);
@@ -166,6 +185,14 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
             s.send(JSON.stringify({ type: "player.setVolume", volume: vol }));
             // hybrid realtime: controllers learn about the device going online
             broadcastToControllers({ type: "device.updated", deviceId: id, device: { id, online: true } });
+            // SEC-09: proactively close the socket the moment the token expires.
+            if (exp !== null) {
+              expiryTimer = setTimeout(
+                () => s.close(4401, "TOKEN_EXPIRED"),
+                Math.max(0, exp - Date.now()),
+              );
+              expiryTimer.unref?.();
+            }
           })();
         return;
       }
@@ -214,6 +241,11 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
     });
 
     s.on("close", () => {
+      wsRateClear(s); // SEC-14: release the per-connection rate-limit bucket
+      if (expiryTimer) {
+        clearTimeout(expiryTimer);
+        expiryTimer = null;
+      }
       if (deviceId) {
         const id = deviceId;
         unregisterPlayer(id, s);

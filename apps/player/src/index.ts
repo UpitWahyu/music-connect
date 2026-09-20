@@ -140,6 +140,12 @@ mpv.on("stderr", (line: string) => {
 async function pair(cfg: PlayerConfig, code: string): Promise<{ deviceId: string; token: string }> {
   // HTTP base = origin only — serverUrl may carry a WS path (e.g. /ws/player)
   const u = new URL(cfg.serverUrl);
+  // SEC-18: the pairing code + device token must never travel in plaintext to
+  // a remote server. Only localhost may use ws://; everything else needs wss://.
+  const host = u.hostname.replace(/^\[|\]$/g, "");
+  if (!["localhost", "127.0.0.1", "::1"].includes(host) && u.protocol !== "wss:") {
+    throw new Error("MUSIC_SERVER_URL harus wss:// untuk server non-lokal");
+  }
   const httpUrl = `${u.protocol === "wss:" ? "https" : "http"}://${u.host}`;
   const res = await fetch(`${httpUrl}/api/player/pair`, {
     method: "POST",

@@ -18,6 +18,18 @@ export function getToken(): string | null {
 
 /** Wipe all auth state (call on logout / auth failure). */
 export function clearTokens(): void {
+  // Best-effort server-side revocation before dropping local state. The
+  // refresh token lives in an HttpOnly cookie, so the browser attaches it
+  // automatically with credentials:"include". Never block the UI redirect if
+  // the server is unreachable — local state is cleared regardless.
+  void fetch(API_BASE + "/auth/logout", {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  }).catch(() => {
+    /* logout must not block the UI redirect */
+  });
   setToken(null);
 }
 

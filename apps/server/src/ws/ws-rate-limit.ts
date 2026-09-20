@@ -68,6 +68,17 @@ export function wsRateAllow(connKey: unknown, userKey: string, type: string): bo
   return true;
 }
 
+/**
+ * SEC-14: drop the per-connection bucket when a socket closes. Without this
+ * the Map grows unbounded over the process lifetime (every reconnect leaks an
+ * entry keyed by the dead socket object). The per-user bucket is intentionally
+ * shared across a user's sockets, so it is left for the sliding window to
+ * expire rather than resetting the budget on every disconnect.
+ */
+export function wsRateClear(connKey: unknown): void {
+  connBuckets.delete(connKey);
+}
+
 /** Track in-flight async commands (server-side playback ops). */
 export function wsInFlightInc(key: string): boolean {
   const cur = inFlight.get(key) ?? 0;

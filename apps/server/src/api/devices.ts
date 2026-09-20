@@ -4,6 +4,7 @@ import { RedisKeys } from "@music-connect/shared";
 import { redis } from "../redis/client.js";
 import { prisma } from "../db/prisma.js";
 import { sha256 } from "../utils.js";
+import { closePlayer } from "../ws/registry.js";
 
 function generatePairingCode(): string {
   // audit P0 #3: 10-digit numeric code (was 6) — much larger search space so
@@ -59,6 +60,11 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
       if (!body.pairingCode) return reply.code(400).send({ error: "MISSING_PAIRING_CODE" });
 
       const code = body.pairingCode.trim();
+      // SEC-12: reject malformed codes before they can be interpolated into
+      // Redis keys (prevents arbitrary-key injection / unbounded key creation).
+      if (!/^\d{3}-\d{3}-\d{4}$/.test(code)) {
+        return reply.code(400).send({ error: "INVALID_PAIRING_CODE_FORMAT" });
+      }
       // Atomic consume (GETDEL): a code can only be used by ONE concurrent
       // request — the loser sees null and lands in the attempt counter.
       const deviceId = await redis.getdel(RedisKeys.pairingCode(code));
@@ -67,8 +73,10 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
         const attempts = await redis.incr(RedisKeys.pairingAttempts(code));
         await redis.expire(RedisKeys.pairingAttempts(code), 300);
         if (attempts >= 3) {
-          // brute-force protection: invalidate whatever is left of the code
-          await redis.del(RedisKeys.pairingCode(code), RedisKeys.pairingDevice(code));
+          // brute-force protection: invalidate whatever is left of the code.
+          // NOTE: pairingDevice is keyed by deviceId, not by code — deleting
+          // pairingDevice(code) here was a wrong-key no-op, so it is omitted.
+          await redis.del(RedisKeys.pairingCode(code));
           return reply.code(423).send({ error: "PAIRING_LOCKED" });
         }
         return reply.code(404).send({ error: "INVALID_OR_EXPIRED_CODE" });
@@ -80,7 +88,8 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
       await redis.del(RedisKeys.pairingAttempts(code));
 
       if (!ownerId) {
-        console.warn(`[devices] pairing code ${code} had no ownerId in Redis — device ${deviceId} will be paired without user assignment`);
+        // SEC-12: never log the pairing code (it is a credential while valid).
+        console.warn(`[devices] pairing code had no ownerId in Redis — device ${deviceId} will be paired without user assignment`);
       }
 
       const token = randomBytes(32).toString("hex");
@@ -129,8 +138,16 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
       const device = await prisma.device.findUnique({ where: { id }, select: { userId: true } });
       if (!device) return reply.code(404).send({ error: "DEVICE_NOT_FOUND" });
       if (device.userId !== user.sub) return reply.code(403).send({ error: "DEVICE_FORBIDDEN" });
-      // tokenHash = "" → the player's stored token no longer matches
-      await prisma.device.update({ where: { id }, data: { tokenHash: "" } });
+      // SEC-09: store a random, never-matching hash instead of "" (an empty
+      // string could collide if a token ever hashed to ""). No real token can
+      // produce this preimage.
+      await prisma.device.update({
+        where: { id },
+        data: { tokenHash: sha256(randomBytes(32).toString("hex")) },
+      });
+      // SEC-09: drop the live player socket so a revoked token stops streaming
+      // immediately rather than lingering until its next reconnect.
+      closePlayer(id, 4401, "TOKEN_REVOKED");
       await redis.srem(RedisKeys.devicesOnline(), id);
       return { ok: true };
     },

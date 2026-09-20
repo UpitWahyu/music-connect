@@ -123,6 +123,15 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
   app.put("/api/selected-device", async (req, reply) => {
     const body = (req.body ?? {}) as { deviceId?: string };
     if (!body.deviceId) return reply.code(400).send({ error: "MISSING_DEVICE_ID" });
+    // SEC-10: a user may only select a device they own (same boundary as every
+    // other device operation) — otherwise the selection could point at someone
+    // else's device and leak/hijack their playback.
+    try {
+      await authorizationService.assertDeviceAccess(userIdOf(req), body.deviceId);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "DEVICE_FORBIDDEN";
+      return reply.code(message === "DEVICE_NOT_FOUND" ? 404 : 403).send({ error: message });
+    }
     await redis.set(RedisKeys.userSelectedDevice(userIdOf(req)), body.deviceId);
     broadcastToControllers({ type: "device.selected", deviceId: body.deviceId });
     return { ok: true };

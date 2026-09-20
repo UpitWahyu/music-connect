@@ -24,15 +24,16 @@ export interface AccessClaims {
   typ: "access" | "refresh";
 }
 
+// fast-jwt v6 expects expiresIn in MILLISECONDS — convert from our seconds constants.
 const accessSigner = createSigner({
   key: config.jwtSecret,
-  expiresIn: ACCESS_TTL_SECONDS,
+  expiresIn: ACCESS_TTL_SECONDS * 1000,
   algorithm: "HS256",
 });
 
 const refreshSigner = createSigner({
   key: config.refreshSecret,
-  expiresIn: REFRESH_TTL_SECONDS,
+  expiresIn: REFRESH_TTL_SECONDS * 1000,
   algorithm: "HS256",
 });
 

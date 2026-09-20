@@ -18,11 +18,11 @@
     "@music-connect/protocol": "workspace:*",
     "@music-connect/shared": "workspace:*",
     "@music-connect/types": "workspace:*",
-    "@prisma/adapter-mariadb": "^7.9.1",
-    "@prisma/client": "^7.9.1",
+    "@prisma/adapter-mariadb": "^7.10.0",
+    "@prisma/client": "^7.10.0",
     "dotenv": "^16.4.5",
     "fast-jwt": "^6.3.2",
-    "fastify": "^5.11.2",
+    "fastify": "^5.12.5",
     "ioredis": "^6.0.0",
     "youtubei.js": "^17.2.0",
     "zod": "^4.4.3"
@@ -30,7 +30,7 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/ws": "^8.18.1",
-    "prisma": "^7.9.1",
+    "prisma": "^7.10.0",
     "tsx": "^4.23.11",
     "typescript": "^5.9.3",
     "ws": "^8.21.3"

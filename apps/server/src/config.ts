@@ -55,7 +55,8 @@ if (IS_PRODUCTION && corsOrigin.length === 0) {
 
 export const config: ServerConfig = {
   port: Number(process.env.PORT ?? 3000),
-  host: process.env.HOST ?? "0.0.0.0",
+  // SEC-03: default to loopback; Caddy is the public entry point
+  host: process.env.HOST ?? "127.0.0.1",
   // D-10: production must set a strong secret
   jwtSecret: requiredSecret("JWT_SECRET"),
   // Refresh tokens are signed with their own secret. In production it must be

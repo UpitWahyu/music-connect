@@ -2,14 +2,14 @@
 
 const API_BASE = "/api";
 
-const TOKEN_KEY = "mc_token";
-
-let token: string | null = localStorage.getItem(TOKEN_KEY);
+// SEC-06: the access token is kept in memory only. Persisting it to
+// localStorage exposed it to any XSS on the origin; the long-lived refresh
+// token already lives in an HttpOnly cookie, so a reload can silently mint a
+// fresh access token via initAuth() instead of reading it from storage.
+let token: string | null = null;
 
 export function setToken(t: string | null): void {
   token = t;
-  if (t) localStorage.setItem(TOKEN_KEY, t);
-  else localStorage.removeItem(TOKEN_KEY);
 }
 
 export function getToken(): string | null {
@@ -76,6 +76,16 @@ async function tryRefresh(): Promise<{ ok: boolean; fatal: boolean }> {
     }
   })();
   return refreshing;
+}
+
+/**
+ * SEC-06: seed the in-memory access token from the HttpOnly refresh cookie.
+ * Call once at app startup (before mounting) so a returning user with a valid
+ * cookie is restored without ever persisting the access token to storage.
+ */
+export async function initAuth(): Promise<boolean> {
+  const { ok } = await tryRefresh();
+  return ok;
 }
 
 function redirectToLogin(): void {

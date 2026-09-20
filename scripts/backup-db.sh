@@ -4,6 +4,8 @@
 # Install in cron, e.g.:
 #   0 3 * * * /root/music-connect/scripts/backup-db.sh >> /var/log/music-backup.log 2>&1
 set -euo pipefail
+# SEC-19: backups may contain credentials and user data — keep them private.
+umask 077
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="$ROOT/.env"
@@ -25,10 +27,14 @@ PORT="${PORT:-3306}"
 mkdir -p "$BACKUP_DIR"
 OUT="$BACKUP_DIR/$DB-$STAMP.sql.gz"
 
+# SEC-19: pass the password via MYSQL_PWD instead of -p"$PASS" so it never
+# shows up in `ps` / the process table on the host or inside the container.
+export MYSQL_PWD="$PASS"
+
 if docker ps --format '{{.Names}}' | grep -q music-connect-mysql-1; then
-  docker exec music-connect-mysql-1 sh -c "mysqldump -u'$USER_' -p'$PASS' -h127.0.0.1 '$DB'" | gzip > "$OUT"
+  docker exec -e MYSQL_PWD="$PASS" music-connect-mysql-1 sh -c "mysqldump -u'$USER_' -h127.0.0.1 '$DB'" | gzip > "$OUT"
 else
-  mysqldump -u"$USER_" -p"$PASS" -h"$HOST" -P"$PORT" "$DB" | gzip > "$OUT"
+  mysqldump -u"$USER_" -h"$HOST" -P"$PORT" "$DB" | gzip > "$OUT"
 fi
 
 echo "[backup] wrote $OUT ($(du -h "$OUT" | cut -f1))"

@@ -105,7 +105,19 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   /** Remove a device (also clears its queue/state in Redis). */
   app.delete("/api/devices/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
+    const user = req.user as { sub?: string } | undefined;
+    // SEC-21: only the owner may delete a device, and deletion must also purge
+    // the device's transient Redis state so a re-paired device can't inherit
+    // a stale playback state / presence entry.
+    const device = await prisma.device.findUnique({ where: { id }, select: { userId: true } });
+    if (!device) return reply.code(404).send({ error: "DEVICE_NOT_FOUND" });
+    if (device.userId && user?.sub && device.userId !== user.sub) {
+      return reply.code(403).send({ error: "DEVICE_FORBIDDEN" });
+    }
     await prisma.device.delete({ where: { id } }).catch(() => null);
+    await redis.del(RedisKeys.deviceState(id));
+    await redis.del(RedisKeys.deviceMeta(id));
+    await redis.del(RedisKeys.pairingDevice(id));
     await redis.srem(RedisKeys.devicesOnline(), id);
     return { ok: true };
   });

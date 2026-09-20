@@ -35,8 +35,9 @@ onMounted(() => {
   window.addEventListener("keydown", onKeydown);
   if (store.authed) {
     void refreshDevices();
-    // session restore (token in localStorage) skips login() — realtime WS must
-    // still start, otherwise the UI falls back to slow 10s polling only
+    // session restore (from the HttpOnly cookie, see initAuth) skips login() —
+    // realtime WS must still start, otherwise the UI falls back to slow 10s
+    // polling only
     startRealtime();
     startPolling();
   }

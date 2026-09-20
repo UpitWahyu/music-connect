@@ -21,7 +21,9 @@ module.exports = {
       name: "music-server",
       cwd: path.join(__dirname, "apps/server"),
       script: "dist/index.js",
-      env: { ...env, PORT: "41019", HOST: "0.0.0.0", NODE_ENV: "production" },
+      // SEC-03: bind the API to loopback only — Caddy / the web preview proxy
+      // are the public entry points, so the raw server port is never exposed.
+      env: { ...env, PORT: "41019", HOST: "127.0.0.1", NODE_ENV: "production" },
       max_memory_restart: "512M", // youtubei.js sessions are memory-hungry
       time: true,
     },

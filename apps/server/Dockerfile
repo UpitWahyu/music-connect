@@ -22,13 +22,31 @@ RUN pnpm --filter @music-connect/types build \
  && pnpm --filter @music-connect/server exec prisma generate --schema ../../../prisma/schema.prisma \
  && pnpm --filter @music-connect/server build
 
+# SEC-20: prune devDependencies in a throwaway stage so the runtime image only
+# ever receives the production dependency tree. CI=true is required for pnpm to
+# prune non-interactively (it otherwise aborts without a TTY).
+FROM build AS prod-deps
+RUN CI=true pnpm prune --prod
+
 FROM base AS runner
 ENV NODE_ENV=production
-COPY --from=build /app/apps/server/dist ./apps/server/dist
-COPY --from=build /app/apps/server/package.json ./apps/server/package.json
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/packages ./packages
-COPY --from=build /app/prisma ./prisma
+# curl is only needed for the HEALTHCHECK below.
+RUN apk add --no-cache curl
+
+# SEC-20: run as the unprivileged `node` user, never as root.
+COPY --from=prod-deps /app/apps/server/dist ./apps/server/dist
+COPY --from=prod-deps /app/apps/server/package.json ./apps/server/package.json
+COPY --from=prod-deps /app/apps/server/node_modules ./apps/server/node_modules
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=prod-deps /app/packages ./packages
+COPY --from=prod-deps /app/prisma ./prisma
+RUN chown -R node:node /app
 WORKDIR /app/apps/server
+USER node
 EXPOSE 3000
+
+# SEC-20: the server exposes an unauthenticated /health liveness endpoint.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD curl -f "http://localhost:${PORT:-3000}/health" || exit 1
+
 CMD ["node", "dist/index.js"]

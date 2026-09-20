@@ -66,7 +66,7 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
       await playbackService.play(id, item.track.id, item.track);
       return { ok: true };
     } catch (e) {
-      return reply.code(409).send({ error: (e as Error).message });
+      return safeError(reply, e, 409);
     }
   });
 }

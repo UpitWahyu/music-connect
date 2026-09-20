@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { z } from "zod";
 import { prisma } from "../db/prisma.js";
 import {
   hashRefreshToken,
@@ -21,6 +22,15 @@ export function verifyPassword(password: string, stored: string): boolean {
   const expected = Buffer.from(hash, "hex");
   return candidate.length === expected.length && timingSafeEqual(candidate, expected);
 }
+
+// A valid-looking scrypt hash used when the username doesn't exist, so the
+// (expensive) verification still runs and login timing can't enumerate users.
+const DUMMY_PASSWORD_HASH = hashPassword("timing-equalizer-not-a-real-password");
+
+const loginSchema = z.object({
+  username: z.string().min(1),
+  password: z.string().min(1),
+});
 
 /** Seed the first user from env when the DB has none (fresh install). */
 export async function ensureSeedUser(): Promise<void> {
@@ -99,11 +109,15 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       config: { rateLimit: { max: 10, timeWindow: "1 minute" } }, // D-10
     },
     async (req, reply) => {
-      const { username, password } = (req.body ?? {}) as { username?: string; password?: string };
-      if (!username || !password) return reply.code(400).send({ error: "MISSING_CREDENTIALS" });
+      const parsed = loginSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return reply.code(400).send({ error: "MISSING_CREDENTIALS" });
+      const { username, password } = parsed.data;
 
       const user = await prisma.user.findUnique({ where: { username } });
-      if (!user || !verifyPassword(password, user.passwordHash)) {
+      // Always verify against a hash — the real one, or a dummy when the user is
+      // unknown — so timing can't reveal whether a username exists.
+      const valid = verifyPassword(password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
+      if (!user || !valid) {
         return reply.code(401).send({ error: "INVALID_CREDENTIALS" });
       }
 

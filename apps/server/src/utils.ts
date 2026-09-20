@@ -6,6 +6,18 @@ export function sha256(value: string): string {
 }
 
 /**
+ * Whitelist of business error codes that are safe to expose to clients
+ * (they carry no internal detail). Anything else must go through safeError().
+ */
+const PUBLIC_ERROR_CODES = new Set(["HANDOFF_FAILED", "NOTHING_TO_TRANSFER"]);
+
+/** Return the error message only when it is a known, non-sensitive code. */
+export function publicErrorCode(e: unknown): string | null {
+  const message = e instanceof Error ? e.message : "";
+  return PUBLIC_ERROR_CODES.has(message) ? message : null;
+}
+
+/**
  * Audit P1 #10: never leak raw internal error messages to clients.
  * Clients get a stable error code + a request id (for server-side lookup);
  * the real exception is logged with the request id for debugging.

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
@@ -20,20 +20,25 @@ import { libraryRoutes } from "./api/library.js";
 /** Build the Fastify app (plugins, guards, routes). Exported for tests. */
 export async function buildApp(): Promise<FastifyInstance> {
   // structured JSON logs (pino) — one line per request/event for PM2/observability
-  const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" } });
+  const app = Fastify({
+    logger: { level: process.env.LOG_LEVEL ?? "info" },
+    // Only trust the loopback reverse proxy (Caddy) so req.ip reflects the real
+    // client for rate-limiting/logging without trusting arbitrary X-Forwarded-*.
+    trustProxy: "127.0.0.1",
+  });
 
   // 13: every response carries X-Request-Id so PM2 logs can be correlated
   app.addHook("onRequest", async (_req, reply) => {
     reply.header("x-request-id", randomUUID());
   });
 
-  // Accept POST with an empty JSON body (e.g. pause/resume/next without payload)
-  app.addContentTypeParser("application/json", { parseAs: "string" }, (_req, body, done) => {
-    try {
-      done(null, body === "" ? {} : JSON.parse(String(body)));
-    } catch (err) {
-      done(err as Error);
-    }
+  // Use Fastify's built-in (secure-json-parse backed) JSON parser so payloads
+  // can't poison Object prototypes — but still accept an empty body for
+  // bodyless commands (e.g. pause/resume/next without a payload).
+  const defaultJsonParser = app.getDefaultJsonParser("error", "error");
+  app.addContentTypeParser("application/json", { parseAs: "string" }, (req, body, done) => {
+    if (body === "") return done(null, {});
+    defaultJsonParser(req, String(body), done);
   });
 
   // CORS: allowlist from env (comma-separated), permissive only in dev
@@ -53,7 +58,9 @@ export async function buildApp(): Promise<FastifyInstance> {
       await prisma.$queryRaw`SELECT 1`;
       return { status: "ok", redis: "ok", mysql: "ok" };
     } catch (e) {
-      return reply.code(503).send({ status: "degraded", error: (e as Error).message });
+      // Log the real cause server-side; never leak internal error details.
+      console.error("[ready] dependency check failed:", e);
+      return reply.code(503).send({ status: "degraded", redis: "error", mysql: "error" });
     }
   });
 
@@ -61,9 +68,13 @@ export async function buildApp(): Promise<FastifyInstance> {
   // (P1 #9). In dev it stays open for local scraping, matching /healthz.
   const metricsToken = process.env.METRICS_TOKEN;
   app.get("/metrics", async (req, reply) => {
-    if (process.env.NODE_ENV === "production" && metricsToken) {
-      const auth = req.headers.authorization;
-      if (auth !== `Bearer ${metricsToken}`) {
+    if (config.isProduction) {
+      // Fail-closed: with no token configured the endpoint is hidden entirely.
+      if (!metricsToken) return reply.code(404).send({ error: "NOT_FOUND" });
+      const provided = Buffer.from(req.headers.authorization ?? "");
+      const expected = Buffer.from(`Bearer ${metricsToken}`);
+      // Constant-time compare to avoid leaking the token via response timing.
+      if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
         return reply.code(401).send({ error: "UNAUTHORIZED" });
       }
     }
@@ -109,6 +120,10 @@ export async function buildApp(): Promise<FastifyInstance> {
       try {
         await req.jwtVerify();
       } catch {
+        return reply.code(401).send({ error: "UNAUTHORIZED" });
+      }
+      // Reject refresh tokens (or any other JWT) presented as an access token.
+      if ((req.user as { typ?: string }).typ !== "access") {
         return reply.code(401).send({ error: "UNAUTHORIZED" });
       }
     }

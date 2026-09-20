@@ -57,7 +57,7 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
       const track = await playlistService.addTrack(userIdOf(req), id, parsed.data);
       return { ok: true, track };
     } catch (e) {
-      return reply.code(404).send({ error: (e as Error).message });
+      return safeError(reply, e, 404);
     }
   });
 
@@ -67,7 +67,7 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
       await playlistService.removeTrack(userIdOf(req), id, trackId);
       return { ok: true };
     } catch (e) {
-      return reply.code(404).send({ error: (e as Error).message });
+      return safeError(reply, e, 404);
     }
   });
 
@@ -84,7 +84,7 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
       await authorizationService.assertDeviceAccess(userIdOf(req), body.deviceId);
       return await playbackService.playTracks(body.deviceId, playlistService.toTracks(playlist));
     } catch (e) {
-      return reply.code(403).send({ error: (e as Error).message });
+      return safeError(reply, e, 403);
     }
   });
 

@@ -1,4 +1,5 @@
 import { config as loadEnv } from "dotenv";
+import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -7,9 +8,18 @@ import { dirname, resolve } from "node:path";
 // hardcoded dev secret (a real security hole once the repo is public).
 loadEnv({ path: resolve(dirname(fileURLToPath(import.meta.url)), "../../../.env") });
 
-const IS_PRODUCTION = process.env.NODE_ENV === "production";
+// Fail-closed: only an explicit development/test environment is treated as
+// non-production. Anything else (including an unset NODE_ENV) is production,
+// so a misconfigured deployment can never silently run with dev defaults.
+const IS_DEV = ["development", "test"].includes(process.env.NODE_ENV ?? "");
+const IS_PRODUCTION = !IS_DEV;
 
-/** Fail-fast in production: secrets must be set & strong; dev keeps a dev fallback. */
+/** A fresh, unguessable secret for local dev when env is unset. */
+function randomSecret(): string {
+  return randomBytes(32).toString("hex");
+}
+
+/** Fail-fast in production: secrets must be set & strong; dev uses a random one. */
 function requiredSecret(name: string): string {
   const value = process.env[name] ?? "";
   if (IS_PRODUCTION) {
@@ -18,7 +28,8 @@ function requiredSecret(name: string): string {
     }
     return value;
   }
-  return value || "dev-secret-change-me";
+  // Never fall back to a hardcoded, public secret — generate one per process.
+  return value || randomSecret();
 }
 
 export interface ServerConfig {
@@ -30,6 +41,8 @@ export interface ServerConfig {
   pairingCodeTtlSeconds: number;
   deviceTokenTtlDays: number;
   corsOrigin: string[];
+  /** Fail-closed production flag (true unless NODE_ENV is development/test). */
+  isProduction: boolean;
 }
 
 let corsOrigin = (process.env.CORS_ORIGIN ?? "")
@@ -47,10 +60,12 @@ export const config: ServerConfig = {
   jwtSecret: requiredSecret("JWT_SECRET"),
   // Refresh tokens are signed with their own secret. In production it must be
   // set explicitly so a leak of the access secret can't forge refresh tokens.
-  refreshSecret: IS_PRODUCTION ? requiredSecret("REFRESH_SECRET") : (process.env.REFRESH_SECRET ?? process.env.JWT_SECRET ?? "dev-secret-change-me"),
+  // In dev it falls back to a random per-process secret — never to JWT_SECRET.
+  refreshSecret: requiredSecret("REFRESH_SECRET"),
   redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",
   pairingCodeTtlSeconds: Number(process.env.PAIRING_CODE_TTL ?? 300), // D-10: 5 min TTL
   deviceTokenTtlDays: Number(process.env.DEVICE_TOKEN_TTL_DAYS ?? 365),
   // Comma-separated CORS allowlist (empty = permissive, dev only)
   corsOrigin,
+  isProduction: IS_PRODUCTION,
 };

@@ -54,7 +54,9 @@ export async function registerWsGateway(app: FastifyInstance): Promise<void> {
           return;
         }
         try {
-          const payload = app.jwt.verify(parsed.data.token) as { sub?: string };
+          const payload = app.jwt.verify(parsed.data.token) as { sub?: string; typ?: string };
+          // Only access tokens may authenticate a controller — never a refresh token.
+          if (payload.typ !== "access") throw new Error("INVALID_TOKEN_TYPE");
           authed = true;
           controllerUserId = payload.sub ?? null;
           addController(s, controllerUserId); // multi-user: scope broadcasts

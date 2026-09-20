@@ -1,7 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { trackSchema } from "@music-connect/protocol";
-import { extractPlaylistId } from "../utils.js";
-import { safeError } from "../utils.js";
+import { extractPlaylistId, publicErrorCode, safeError } from "../utils.js";
 import { playbackService } from "../services/playback.service.js";
 import { authorizationService } from "../services/authorization.service.js";
 
@@ -144,7 +143,7 @@ export async function playbackRoutes(app: FastifyInstance): Promise<void> {
     try {
       await authorizationService.assertDeviceAccess(user.sub, body.to);
     } catch (e) {
-      return reply.code(403).send({ error: (e as Error).message });
+      return safeError(reply, e, 403);
     }
     try {
       await playbackService.transfer(id, body.to);
@@ -153,8 +152,8 @@ export async function playbackRoutes(app: FastifyInstance): Promise<void> {
       // transfer throws known, non-sensitive business errors (HANDOFF_FAILED,
       // NOTHING_TO_TRANSFER). Surface the code (not the raw message) so the UI
       // can react — P1 #10 still applies to everything else via safeError().
-      const code = (e as Error).message;
-      if (code === "HANDOFF_FAILED" || code === "NOTHING_TO_TRANSFER") {
+      const code = publicErrorCode(e);
+      if (code) {
         return reply.code(409).send({ error: code });
       }
       return fail(reply, e);

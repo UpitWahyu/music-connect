@@ -27,11 +27,12 @@ export class AutoQueueService {
     if (!seedTrackId) return Promise.resolve(0);
     const existing = this.inflight.get(deviceId);
     if (existing) return existing; // concurrent ensure() reuses the in-flight one
-    // repeat-one ("loop") means the same track just replays — auto recommendations
-    // would never be reached, so skip the YT Music call entirely (saves provider load).
+    // Repeat modes ("loop") mean the user wants to replay their existing
+    // queue — auto recommendations would never be reached in repeat-one and
+    // would pollute the queue in repeat-all.  Skip the YT Music call entirely.
     const p = (async () => {
       const st = (await playbackService.getState(deviceId)) ?? null;
-      if (st?.repeat === "one") return 0;
+      if (st?.repeat && st.repeat !== "off") return 0;
       return this.doEnsure(deviceId, seedTrackId);
     })()
       .catch(() => 0) // auto-queue is best-effort — never block playback/handoff on the provider
